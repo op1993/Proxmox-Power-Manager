@@ -41,7 +41,7 @@ def container_registered_in_cluster(ctid):
     if not isinstance(resources, list):
         raise ValueError('Invalid cluster resource response')
     return any(
-        item.get('type') == 'lxc' and item.get('vmid') == ctid
+        item.get('type') == 'lxc' and str(item.get('vmid')) == str(ctid)
         for item in resources if isinstance(item, dict)
     )
 
