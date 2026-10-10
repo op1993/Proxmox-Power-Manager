@@ -107,7 +107,18 @@ if [[ "$mode" == 2 ]]; then
   echo "Will create CT $ctid using $template, $storage ($disk GiB), $memory MiB RAM, $cores CPU on $bridge"
   read -rp 'Create this LXC? [y/N]: ' confirmed
   [[ "$confirmed" =~ ^[Yy]$ ]] || exit 0
+  if [[ -e /etc/proxmox-power-manager/installation.json ]]; then
+    echo 'An installation manifest already exists. Refusing to create a second managed container.' >&2
+    exit 1
+  fi
   pct create "$ctid" "$template" --hostname ppm-web --ostype debian --unprivileged 1 --cores "$cores" --memory "$memory" --swap 256 --rootfs "${storage}:${disk}" --net0 "name=eth0,bridge=${bridge},ip=dhcp" --onboot 1 --features nesting=0
+  PPM_CTID="$ctid" python3 - <<'PYMANIFEST'
+import json, os, pathlib
+p = pathlib.Path('/etc/proxmox-power-manager/installation.json')
+p.write_text(json.dumps({'schema': 1, 'web_ctid': int(os.environ['PPM_CTID']),
+                         'web_ct_created_by_ppm': True}, indent=2) + '\n')
+p.chmod(0o600)
+PYMANIFEST
   pct start "$ctid"
   echo "Waiting for CT $ctid network initialization..."
   for attempt in $(seq 1 30); do
