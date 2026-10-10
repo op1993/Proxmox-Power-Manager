@@ -53,12 +53,15 @@ def reset_confirmation():
 
 def inspect():
     if not MANIFEST.is_file():
+        reset_confirmation()
         return 'unregistered'
     data = json.loads(MANIFEST.read_text())
     ctid = data.get('web_ctid')
     if data.get('schema') != 1 or type(ctid) is not int or not 100 <= ctid <= 999999:
+        reset_confirmation()
         return 'invalid-manifest'
     if data.get('web_ct_created_by_ppm') is not True:
+        reset_confirmation()
         return 'external-container'
     if data.get('installation_complete') is not True:
         reset_confirmation()
