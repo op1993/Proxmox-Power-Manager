@@ -14,9 +14,29 @@ else
   echo 'Disable automatic sleep in config before updating'; exit 1
 fi
 stamp="$(date +%Y%m%d%H%M%S)"
-mkdir -p "/var/backups/proxmox-power-manager/$stamp"
-cp -a /opt/proxmox-power-manager/agent "/var/backups/proxmox-power-manager/$stamp/"
+backup_dir="/var/backups/proxmox-power-manager/$stamp"
+mkdir -p "$backup_dir"
+cp -a /opt/proxmox-power-manager/agent "$backup_dir/"
 cp -a /etc/proxmox-power-manager/config.json "/var/backups/proxmox-power-manager/$stamp/"
+rollback() {
+  echo 'Update failed; restoring previous host agent and systemd units' >&2
+  cp -a "$backup_dir/agent/." /opt/proxmox-power-manager/agent/
+  if [[ -d "$backup_dir/systemd" ]]; then
+    cp -a "$backup_dir/systemd/." /etc/systemd/system/
+  fi
+  systemctl daemon-reload
+  systemctl restart proxmox-power-manager.service || true
+  if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; then
+    systemctl restart proxmox-power-manager-api.service || true
+  fi
+}
+mkdir -p "$backup_dir/systemd"
+for unit in proxmox-power-manager.service proxmox-power-manager-api.service; do
+  if [[ -f "/etc/systemd/system/$unit" ]]; then
+    cp -a "/etc/systemd/system/$unit" "$backup_dir/systemd/"
+  fi
+done
+trap rollback ERR
 install -m 0755 "$ROOT/agent/power_manager.py" /opt/proxmox-power-manager/agent/power_manager.py
 install -m 0755 "$ROOT/agent/control.py" /opt/proxmox-power-manager/agent/control.py
 install -m 0755 "$ROOT/agent/api.py" /opt/proxmox-power-manager/agent/api.py
@@ -26,6 +46,7 @@ if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; t
   systemctl restart proxmox-power-manager-api.service
 fi
 systemctl restart proxmox-power-manager.service
-systemctl is-active --quiet proxmox-power-manager.service || { echo 'Agent unhealthy: restore backup manually from /var/backups/proxmox-power-manager/'"$stamp"; exit 1; }
+systemctl is-active --quiet proxmox-power-manager.service
+trap - ERR
 echo "Host agent updated. Backup: /var/backups/proxmox-power-manager/$stamp"
-echo 'Web UI update requires copying web files to its LXC and restarting the web service.'
+echo 'Web UI is not updated by this script; its credentials and files are untouched.'
