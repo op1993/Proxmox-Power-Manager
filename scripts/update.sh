@@ -94,6 +94,7 @@ if [[ -n "$ctid" ]]; then
   pct exec "$ctid" -- systemctl restart proxmox-power-manager-web.service
   pct exec "$ctid" -- systemctl is-active --quiet proxmox-power-manager-web.service
 fi
+install -m 0755 "$ROOT/scripts/ppm" /usr/local/bin/ppm
 trap - ERR
 echo "Update successful. Host backup: $backup"
 if [[ -n "$ctid" ]]; then
