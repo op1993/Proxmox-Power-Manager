@@ -62,6 +62,23 @@ class CleanupWatcherTests(unittest.TestCase):
             self.assertEqual(watch.inspect(), "cleanup-ready")
         self.assertEqual(self.ready.read_text().strip(), "101")
 
+    def test_cluster_outage_resets_partial_confirmation(self):
+        with patch.object(watch, "cluster_healthy", side_effect=[True, False, True]):
+            self.assertEqual(watch.inspect(), "missing-unconfirmed")
+            self.assertEqual(watch.inspect(), "cluster-unavailable")
+            self.assertFalse(self.counter.exists())
+            self.assertEqual(watch.inspect(), "missing-unconfirmed")
+        self.assertEqual(self.counter.read_text().strip(), "1")
+
+    def test_pending_recovery_resets_partial_confirmation(self):
+        with patch.object(watch, "cluster_healthy", return_value=True):
+            self.assertEqual(watch.inspect(), "missing-unconfirmed")
+            self.recovery.write_text("{}")
+            self.assertEqual(watch.inspect(), "recovery-pending")
+            self.assertFalse(self.counter.exists())
+            self.recovery.unlink()
+            self.assertEqual(watch.inspect(), "missing-unconfirmed")
+
     def test_reappearance_resets_confirmation(self):
         with patch.object(watch, "cluster_healthy", return_value=True):
             self.assertEqual(watch.inspect(), "missing-unconfirmed")
