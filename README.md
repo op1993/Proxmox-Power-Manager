@@ -272,3 +272,9 @@ The lifecycle observer now checks cluster quorum and requires three consecutive 
 ### Installation safety guard
 
 For newly created web containers, the installer registers `installation_complete: false` first and changes it to `true` only after the web service starts and API connectivity has been checked. The cleanup observer ignores incomplete installations, and the timer is enabled only at the end of the new-LXC installation path. If installation fails, inspect and resolve the partial installation manually; the installer does not yet roll back created containers. Automatic cleanup is still disabled and requires a separate safety review.
+
+### Managed LXC lifecycle and removal limitations
+
+In the new-container installation mode, the LXC is created first, then its CTID is recorded in the host installation manifest, and only then are host services installed. The watcher starts only after successful web installation and API verification. It requires three consecutive healthy observations of the CT being absent from both local and cluster inventory; migration and outages must not count as removal. Stale removal markers are cleared when the installation manifest is invalid or ownership is revoked.
+
+**Important:** the watcher currently creates a `cleanup-ready` marker only. It does **not** automatically disable or uninstall host services, remove secrets, or destroy containers. A guarded manual host cleanup script is provided for review, but is not wired into systemd. Do not interpret deletion of a web LXC as full uninstallation yet.
