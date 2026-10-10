@@ -3,6 +3,41 @@ set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo 'Run as root on Proxmox'; exit 1; }
 command -v pct >/dev/null || { echo 'This installer must run on a Proxmox host'; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Installation helpers: use Proxmox's own storage and template metadata.
+require_choice() {
+  local value="$1" label="$2"
+  [[ "$value" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "Invalid $label" >&2; exit 1; }
+}
+choose_default() {
+  local prompt="$1" default="$2" response
+  read -rp "$prompt [$default]: " response
+  printf '%s' "${response:-$default}"
+}
+auto_ctid() {
+  pvesh get /cluster/nextid --output-format json | tr -d '"[:space:]'
+}
+auto_host_ip() {
+  ip -4 -o addr show scope global | awk '$2 ~ /^vmbr/ {split($4,a,"/"); print a[1]; exit}'
+}
+template_storage() {
+  pvesm status --content vztmpl | awk 'NR>1 && $3=="active" {print $1; exit}'
+}
+root_storage() {
+  pvesm status --content rootdir | awk 'NR>1 && $3=="active" {if($1=="local-lvm"){print $1; exit} if(!first)first=$1} END {if(!seen && first)print first}'
+}
+select_template() {
+  local store="$1" found candidate
+  found="$(pveam list "$store" | awk '/debian-(12|13)-standard_/ {print $1}' | sort -V | tail -1)"
+  if [[ -n "$found" ]]; then printf '%s' "$found"; return; fi
+  echo "No Debian 12/13 template cached; refreshing template list..." >&2
+  pveam update >&2
+  candidate="$(pveam available --section system | awk '/debian-(12|13)-standard_/ {print $2}' | sort -V | tail -1)"
+  [[ -n "$candidate" ]] || { echo "No Debian template available" >&2; return 1; }
+  echo "Downloading $candidate into $store" >&2
+  pveam download "$store" "$candidate" >&2
+  printf '%s:vztmpl/%s' "$store" "$candidate"
+}
+
 echo 'Proxmox Power Manager installer'
 echo '1) Agent only'
 echo '2) Agent + new LXC web UI (Debian 12/13 template)'
@@ -25,35 +60,66 @@ if [[ "$mode" == 1 ]]; then
   exit 0
 fi
 command -v openssl >/dev/null || { echo 'Missing openssl'; exit 1; }
-read -rp 'Proxmox host LAN IP reachable from LXC: ' hostip
+default_ip="$(auto_host_ip)"
+[[ -n "$default_ip" ]] || { echo "Could not detect vmbr IPv4; supply host IP." >&2; }
+hostip="$(choose_default 'Proxmox host LAN IP reachable from LXC' "$default_ip")"
 [[ "$hostip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Use IPv4 LAN address'; exit 1; }
 if [[ "$mode" == 2 ]]; then
-  read -rp 'New CTID: ' ctid
-  [[ "$ctid" =~ ^[0-9]{3,6}$ ]] || exit 1
+  command -v pvesh >/dev/null || { echo 'Missing pvesh'; exit 1; }
+  command -v pvesm >/dev/null || { echo 'Missing pvesm'; exit 1; }
+  command -v pveam >/dev/null || { echo 'Missing pveam'; exit 1; }
+  read -rp 'Setup [1=automatic, 2=advanced] (default 1): ' setup
+  setup="${setup:-1}"
+  [[ "$setup" =~ ^[12]$ ]] || exit 1
+  suggested_ctid="$(auto_ctid)"
+  [[ "$suggested_ctid" =~ ^[0-9]{3,6}$ ]] || { echo 'Unable to select CTID'; exit 1; }
+  suggested_template_storage="$(template_storage)"
+  suggested_root_storage="$(root_storage)"
+  [[ -n "$suggested_template_storage" && -n "$suggested_root_storage" ]] || {
+    echo 'No active template or rootdir storage found' >&2; exit 1;
+  }
+  ctid="$suggested_ctid"
+  template_store="$suggested_template_storage"
+  storage="$suggested_root_storage"
+  bridge="vmbr0"
+  cores=1; memory=256; disk=4
+  if [[ "$setup" == 2 ]]; then
+    ctid="$(choose_default 'New CTID' "$ctid")"
+    template_store="$(choose_default 'Template storage' "$template_store")"
+    storage="$(choose_default 'Rootfs storage' "$storage")"
+    bridge="$(choose_default 'Network bridge' "$bridge")"
+    cores="$(choose_default 'CPU cores' "$cores")"
+    memory="$(choose_default 'Memory (MiB)' "$memory")"
+    disk="$(choose_default 'Disk (GiB)' "$disk")"
+  fi
+  [[ "$ctid" =~ ^[0-9]{3,6}$ ]] || { echo 'Invalid CTID'; exit 1; }
+  require_choice "$template_store" 'template storage'
+  require_choice "$storage" 'root storage'
+  require_choice "$bridge" 'bridge'
+  [[ "$cores" =~ ^[0-9]+$ && "$cores" -ge 1 && "$cores" -le 16 ]] || exit 1
+  [[ "$memory" =~ ^[0-9]+$ && "$memory" -ge 256 && "$memory" -le 16384 ]] || exit 1
+  [[ "$disk" =~ ^[0-9]+$ && "$disk" -ge 4 && "$disk" -le 256 ]] || exit 1
   if pct status "$ctid" >/dev/null 2>&1; then echo 'CTID already exists'; exit 1; fi
-  echo 'Available Debian templates:'
-  pveam list local | grep -E 'debian-(12|13).*standard' || true
-  read -rp 'Template volume (e.g. local:vztmpl/debian-13-standard_...tar.zst): ' template
-  [[ "$template" =~ ^[a-zA-Z0-9_-]+:vztmpl/debian-(12|13)-standard_[a-zA-Z0-9._+-]+\.tar\.(zst|gz|xz)$ ]] || { echo 'Invalid template'; exit 1; }
-  read -rp 'Rootfs storage [local-lvm]: ' storage
-  storage="${storage:-local-lvm}"
-  [[ "$storage" =~ ^[a-zA-Z0-9_-]+$ ]] || exit 1
-  read -rp 'Network bridge [vmbr0]: ' bridge
-  bridge="${bridge:-vmbr0}"
-  [[ "$bridge" =~ ^[a-zA-Z0-9_-]+$ ]] || exit 1
-  pct create "$ctid" "$template" --hostname ppm-web --ostype debian --unprivileged 1 --cores 1 --memory 256 --swap 256 --rootfs "${storage}:4" --net0 "name=eth0,bridge=${bridge},ip=dhcp" --onboot 1 --features nesting=0
+  ip link show "$bridge" >/dev/null || { echo 'Bridge not found'; exit 1; }
+  pvesm status --content rootdir | awk 'NR>1 {print $1}' | grep -Fxq "$storage" || { echo 'Invalid rootdir storage'; exit 1; }
+  pvesm status --content vztmpl | awk 'NR>1 {print $1}' | grep -Fxq "$template_store" || { echo 'Invalid template storage'; exit 1; }
+  template="$(select_template "$template_store")"
+  echo "Will create CT $ctid using $template, $storage ($disk GiB), $memory MiB RAM, $cores CPU on $bridge"
+  read -rp 'Create this LXC? [y/N]: ' confirmed
+  [[ "$confirmed" =~ ^[Yy]$ ]] || exit 0
+  pct create "$ctid" "$template" --hostname ppm-web --ostype debian --unprivileged 1 --cores "$cores" --memory "$memory" --swap 256 --rootfs "${storage}:${disk}" --net0 "name=eth0,bridge=${bridge},ip=dhcp" --onboot 1 --features nesting=0
   pct start "$ctid"
 else
   read -rp 'Existing Debian CTID: ' ctid
   [[ "$ctid" =~ ^[0-9]{3,6}$ ]] || exit 1
   pct status "$ctid" | grep -q 'running' || { echo 'Container must be running'; exit 1; }
-  read -rp 'Existing container will receive web files and SSH client. Continue? [y/N]: ' answer
+  read -rp 'Existing container will receive web files and Python runtime. Continue? [y/N]: ' answer
   [[ "$answer" == 'y' ]] || exit 1
 fi
 pct exec "$ctid" -- sh -c 'command -v apt-get >/dev/null && test -f /etc/debian_version' || { echo 'Requires Debian LXC'; exit 1; }
 pct exec "$ctid" -- apt-get update
 pct exec "$ctid" -- apt-get install -y python3 ca-certificates
-pct exec "$ctid" -- mkdir -p /opt/proxmox-power-manager/web /etc/proxmox-power-manager /etc/proxmox-power-manager
+pct exec "$ctid" -- mkdir -p /opt/proxmox-power-manager/web /etc/proxmox-power-manager
 for f in server.py auth.py index.html app.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
 KEY_DIR=/etc/proxmox-power-manager
 # Private HTTPS API; certificate contains the Proxmox LAN IP as an IP SAN.
@@ -112,6 +178,9 @@ pct exec "$ctid" -- chmod 600 /etc/proxmox-power-manager/web.env
 pct push "$ctid" "$ROOT/systemd/proxmox-power-manager-web.service" /etc/systemd/system/proxmox-power-manager-web.service
 pct exec "$ctid" -- systemctl daemon-reload
 pct exec "$ctid" -- systemctl enable --now proxmox-power-manager-web.service
+pct exec "$ctid" -- systemctl is-active --quiet proxmox-power-manager-web.service || {
+  echo 'Web service failed to start; inspect container logs' >&2; exit 1;
+}
 echo 'Web UI installed. Access port 8080 on the LXC IP (LAN only).'
 echo "Authentication settings: /etc/proxmox-power-manager/auth.json (inside CT $ctid)"
 echo 'WARNING: Plain HTTP on port 8080. Restrict access to LAN; use HTTPS reverse proxy for remote access.'
