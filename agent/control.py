@@ -49,24 +49,13 @@ def execute(action, changes=None):
             os.chmod(tmp,0o600); os.replace(tmp,CONFIG)
         return {'ok':True, 'config':cfg}
     if action == 'dry-run':
-        # Read-only preview: never contend with the running daemon's exclusive lock.
+        from simulator import simulate
         agent_path = pathlib.Path('/opt/proxmox-power-manager/agent/power_manager.py')
         spec = importlib.util.spec_from_file_location('ppm_agent_preview', agent_path)
         agent = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(agent)
         cfg = agent.load_config()
-        st = agent.status(cfg)
-        if st['ac_online']:
-            decision = 'AC online: no shutdown or suspend'
-        elif not cfg['enabled']:
-            decision = 'Automation disabled: no shutdown or suspend'
-        elif st['battery_percent'] <= cfg['critical_threshold']:
-            decision = 'Critical battery: critical action would be evaluated'
-        elif st['battery_percent'] <= cfg['sleep_threshold']:
-            decision = 'Battery below sleep threshold: shutdown and suspend would be evaluated'
-        else:
-            decision = 'Battery above sleep threshold: no action'
-        return {'ok': True, 'log': decision, 'status': st}
+        return simulate(cfg, agent.status(cfg), changes or {})
     raise ValueError('Action not permitted')
 
 if __name__ == '__main__':
