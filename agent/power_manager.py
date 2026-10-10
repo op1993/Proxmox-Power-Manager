@@ -177,6 +177,10 @@ def cycle(cfg, dry_run=False):
     if st['ac_online']:
         if not dry_run: restore_guests(cfg)
         return
+    if not cfg['enabled']:
+        if st['saved_state'] is not None:
+            log.warning('Recovery state exists while automation is disabled; waiting for AC')
+        return
     if st['saved_state'] is None and st['battery_percent'] > cfg['sleep_threshold']: return
     if st['battery_percent'] <= cfg['critical_threshold']:
         critical(cfg,dry_run); return
@@ -188,8 +192,8 @@ def cycle(cfg, dry_run=False):
         log.info('AC returned before suspend'); restore_guests(cfg); return
     if read_int(cfg['battery_path']) <= cfg['critical_threshold']:
         critical(cfg); return
-    Path('/sys/power/mem_sleep').write_text('deep')
-    log.info('Entering S3 for %s minutes',minutes)
+    # Not all systems support deep sleep. Let rtcwake select the available mode.
+    log.info('Requesting RTC suspend for %s minutes',minutes)
     try: run('rtcwake','-m','mem','-s',str(minutes*60),timeout=minutes*60+300)
     except (OSError,subprocess.SubprocessError) as e: log.error('Suspend/wake failed: %s',e)
     if ac_online(cfg): restore_guests(cfg)
