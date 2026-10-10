@@ -6,7 +6,6 @@ requires healthy pmxcfs and three observations before flagging cleanup.
 No services, containers, credentials or user data are deleted here.
 """
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -31,6 +30,11 @@ def cluster_healthy():
         return False
 
 
+def reset_confirmation():
+    COUNTER.unlink(missing_ok=True)
+    READY.unlink(missing_ok=True)
+
+
 def inspect():
     if not MANIFEST.is_file():
         return 'unregistered'
@@ -41,16 +45,20 @@ def inspect():
     if data.get('web_ct_created_by_ppm') is not True:
         return 'external-container'
     if RECOVERY.exists():
+        reset_confirmation()
         return 'recovery-pending'
     if not cluster_healthy():
+        reset_confirmation()
         return 'cluster-unavailable'
     if (LXC_CONFIG_DIR / f'{ctid}.conf').is_file():
-        COUNTER.unlink(missing_ok=True)
-        READY.unlink(missing_ok=True)
+        reset_confirmation()
         return 'present'
     # Only mark a possible deletion. A separate explicit cleanup step is needed.
     COUNTER.parent.mkdir(parents=True, exist_ok=True)
-    count = int(COUNTER.read_text()) + 1 if COUNTER.is_file() else 1
+    try:
+        count = int(COUNTER.read_text().strip()) + 1 if COUNTER.is_file() else 1
+    except ValueError:
+        count = 1
     COUNTER.write_text(str(min(count, 3)) + '\n')
     if count >= 3:
         READY.write_text(str(ctid) + '\n')
