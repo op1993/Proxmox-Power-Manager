@@ -70,7 +70,7 @@ rollback() {
   fi
 }
 trap rollback ERR
-for f in power_manager.py control.py api.py; do
+for f in power_manager.py control.py api.py simulator.py; do
   install -m 0755 "$ROOT/agent/$f" "$BASE/agent/$f"
 done
 for unit in proxmox-power-manager.service proxmox-power-manager-api.service; do
