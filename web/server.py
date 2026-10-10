@@ -144,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/config':
                 return self.send_json(200, call('update', payload))
             if self.path == '/api/dry-run':
-                return self.send_json(200, call('dry-run'))
+                return self.send_json(200, call('dry-run', payload))
             return self.send_json(404, {'error': 'Not found'})
         except Exception:
             return self.send_json(502, {'error': 'Agent unavailable'})
