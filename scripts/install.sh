@@ -226,6 +226,35 @@ pct exec "$ctid" -- systemctl enable --now proxmox-power-manager-web.service
 pct exec "$ctid" -- systemctl is-active --quiet proxmox-power-manager-web.service || {
   echo 'Web service failed to start; inspect container logs' >&2; exit 1;
 }
+# Permit only the web container to reach the host API through Proxmox firewall.
+# Do not alter global firewall policy or create broad LAN allow rules.
+configure_api_firewall() {
+  local ct_ip node existing
+  ct_ip="$(pct exec "$ctid" -- ip -4 -o addr show dev eth0 | awk '{split($4,a,"/"); print a[1]; exit}')"
+  [[ "$ct_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+    echo 'Cannot determine LXC IPv4 for firewall rule' >&2; return 1;
+  }
+  node="$(hostname -s)"
+  existing="$(pvesh get "/nodes/$node/firewall/rules" --output-format json)"
+  if PPM_SOURCE="$ct_ip/32" python3 -c '
+import json,os,sys
+rules=json.load(sys.stdin)
+sys.exit(0 if any(
+    x.get("type")=="in" and x.get("action")=="ACCEPT"
+    and x.get("proto")=="tcp" and str(x.get("dport"))=="8765"
+    and x.get("source")==os.environ["PPM_SOURCE"]
+    and x.get("enable",1) in (1,True,"1")
+    for x in rules
+) else 1)' <<< "$existing"; then
+    echo "Host API firewall rule already exists for $ct_ip"
+  else
+    pvesh create "/nodes/$node/firewall/rules" \
+      --type in --action ACCEPT --proto tcp --source "$ct_ip/32" \
+      --dport 8765 --enable 1 --comment "PPM Web LXC $ctid"
+    echo "Allowed Host API TCP/8765 from $ct_ip only"
+  fi
+}
+configure_api_firewall
 echo 'Web UI installed. Access port 8080 on the LXC IP (LAN only).'
 echo 'Testing API connectivity from the container...'
 if pct exec "$ctid" -- python3 -c 'import os,ssl,urllib.request; p="/etc/proxmox-power-manager/"; url=open(p+"web.env").read().split("PPM_API_URL=",1)[1].splitlines()[0]; token=open(p+"api-token").read().strip(); req=urllib.request.Request(url+"/v1/status",headers={"Authorization":"Bearer "+token}); print("API status:",urllib.request.urlopen(req,context=ssl.create_default_context(cafile=p+"api.crt"),timeout=10).status)'; then
