@@ -1,0 +1,14 @@
+[Unit]
+Description=Proxmox Power Manager HTTPS Agent API
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+EnvironmentFile=/etc/proxmox-power-manager/api.env
+ExecStart=/usr/bin/python3 /opt/proxmox-power-manager/agent/api.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target

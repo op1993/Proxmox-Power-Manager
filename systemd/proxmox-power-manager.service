@@ -1,0 +1,13 @@
+[Unit]
+Description=Proxmox Power Manager Agent
+After=pve-cluster.service
+Requires=pve-cluster.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/proxmox-power-manager/agent/power_manager.py run
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+{
+  "enabled": false,
+  "sleep_threshold": 30,
+  "low_threshold": 15,
+  "critical_threshold": 8,
+  "normal_wake_minutes": 15,
+  "low_wake_minutes": 60,
+  "check_seconds": 60,
+  "shutdown_timeout": 120,
+  "ac_path": "/sys/class/power_supply/ADP0/online",
+  "battery_path": "/sys/class/power_supply/BAT0/capacity",
+  "manage_vms": true,
+  "critical_action": "poweroff",
+  "minimum_restore_percent": 15
+}
