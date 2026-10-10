@@ -1,18 +1,20 @@
 let csrf='';
 const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str']];
 const settingsGroups=[
-  {title:'Управление зарядом аккумулятора',description:'Lenovo Conservation Mode: включение и пороги зарядки. Аппаратное ограничение может отличаться от заданного.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
-  {title:'Управление отключением/включением сервера',description:'Автоматический сон, пробуждение, остановка и восстановление LXC/VM, критические пороги и дополнительные параметры.',keys:['enabled','sleep_threshold','low_threshold','critical_threshold','normal_wake_minutes','low_wake_minutes','minimum_restore_percent','manage_vms','shutdown_timeout','check_seconds','critical_action']}
+  {title:'Управление зарядом аккумулятора',description:'Lenovo Conservation Mode и пороги управления зарядом.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
+  {title:'Управление отключением/включением сервера',description:'Настройки автоматического сна и восстановления гостей.',toggle:'enabled',sections:[
+    {title:'Экономный режим',description:'Когда переходить в сон и через сколько минут просыпаться.',keys:['sleep_threshold','normal_wake_minutes']},
+    {title:'Критический режим',description:'Порог энергосбережения и увеличенный интервал сна.',keys:['low_threshold','low_wake_minutes']},
+    {title:'Остановка и восстановление контейнеров',description:'Проверка фактической остановки гостей перед сном обязательна.',keys:['shutdown_timeout','manage_vms','minimum_restore_percent']},
+    {title:'Мониторинг питания',description:'Как часто проверять питание, пока сервер работает.',keys:['check_seconds']},
+    {title:'Аварийная защита',description:'Отдельный критический порог и действие при почти разряженной батарее.',keys:['critical_threshold','critical_action']}
+  ]}
 ];
 function renderSettings(cfg){
   const root=el('settings');root.replaceChildren();
   const definitions=new Map(fields.map(field=>[field[0],field]));
-  for(const group of settingsGroups){
-    const details=document.createElement('details');details.className='settings-group';
-    details.open=true;
-    const summary=document.createElement('summary');summary.textContent=group.title;details.append(summary);
-    const hint=document.createElement('p');hint.className='settings-hint';hint.textContent=group.description;details.append(hint);
-    for(const key of group.keys){
+  function addFields(container,keys){
+    for(const key of keys){
       const field=definitions.get(key);if(!field)continue;
       const [,label,type]=field;
       const row=document.createElement('label');row.textContent=label;
@@ -20,8 +22,27 @@ function renderSettings(cfg){
       inp.type=type==='bool'?'checkbox':type==='str'?'text':'number';
       if(type==='bool')inp.checked=cfg[key]===true;
       else inp.value=cfg[key]??'';
-      row.append(inp);details.append(row);
+      row.append(inp);container.append(row);
     }
+  }
+  for(const group of settingsGroups){
+    const details=document.createElement('details');details.className='settings-group';details.open=true;
+    const summary=document.createElement('summary');summary.textContent=group.title;details.append(summary);
+    const hint=document.createElement('p');hint.className='settings-hint';hint.textContent=group.description;details.append(hint);
+    if(group.toggle){
+      const toggleWrap=document.createElement('div');toggleWrap.className='settings-toggle';
+      addFields(toggleWrap,[group.toggle]);details.append(toggleWrap);
+      const body=document.createElement('div');body.className='settings-dependent';
+      for(const section of group.sections){
+        const nested=document.createElement('details');nested.className='settings-subgroup';nested.open=true;
+        const heading=document.createElement('summary');heading.textContent=section.title;nested.append(heading);
+        const help=document.createElement('p');help.className='settings-hint';help.textContent=section.description;nested.append(help);
+        addFields(nested,section.keys);body.append(nested);
+      }
+      const toggle=toggleWrap.querySelector('input');
+      const sync=()=>{body.hidden=!toggle.checked};
+      toggle.addEventListener('change',sync);sync();details.append(body);
+    }else addFields(details,group.keys);
     root.append(details);
   }
 }
