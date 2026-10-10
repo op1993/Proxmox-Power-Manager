@@ -231,7 +231,8 @@ echo 'Testing API connectivity from the container...'
 if pct exec "$ctid" -- python3 -c 'import os,ssl,urllib.request; p="/etc/proxmox-power-manager/"; url=open(p+"web.env").read().split("PPM_API_URL=",1)[1].splitlines()[0]; token=open(p+"api-token").read().strip(); req=urllib.request.Request(url+"/v1/status",headers={"Authorization":"Bearer "+token}); print("API status:",urllib.request.urlopen(req,context=ssl.create_default_context(cafile=p+"api.crt"),timeout=10).status)'; then
   echo 'API connection verified.'
 else
-  echo 'WARNING: API connection failed. Check IP, firewall and API service logs.' >&2
+  echo 'ERROR: API connection failed. Check IP, firewall and API service logs.' >&2
+  exit 1
 fi
 if [[ "$mode" == 2 ]]; then
   python3 - <<'PYMANIFEST_DONE'
