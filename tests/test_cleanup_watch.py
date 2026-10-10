@@ -21,6 +21,9 @@ class CleanupWatcherTests(unittest.TestCase):
         self.counter = d / "missing-count"
         self.ready = d / "cleanup-ready"
         self.config = d / "101.conf"
+        p = patch.object(watch, "LXC_CONFIG_DIR", d)
+        p.start()
+        self.addCleanup(p.stop)
         self.manifest.write_text(json.dumps({
             "schema": 1, "web_ctid": 101, "web_ct_created_by_ppm": True
         }))
@@ -31,14 +34,6 @@ class CleanupWatcherTests(unittest.TestCase):
             p = patch.object(watch, name, value)
             p.start()
             self.addCleanup(p.stop)
-        p = patch.object(watch.Path, "is_file", autospec=True,
-                         side_effect=self.is_file)
-        # Do not patch Path globally: all paths are redirected using a temporary /etc/pve fixture.
-        p.stop()
-
-    def is_file(self, path):
-        return Path(path).exists()
-
     def test_no_manifest(self):
         self.manifest.unlink()
         self.assertEqual(watch.inspect(), "unregistered")
@@ -65,6 +60,14 @@ class CleanupWatcherTests(unittest.TestCase):
             self.assertEqual(watch.inspect(), "missing-unconfirmed")
             self.assertEqual(watch.inspect(), "cleanup-ready")
         self.assertEqual(self.ready.read_text().strip(), "101")
+
+    def test_reappearance_resets_confirmation(self):
+        with patch.object(watch, "cluster_healthy", return_value=True):
+            self.assertEqual(watch.inspect(), "missing-unconfirmed")
+            self.config.write_text("hostname: ppm-web\\n")
+            self.assertEqual(watch.inspect(), "present")
+        self.assertFalse(self.counter.exists())
+        self.assertFalse(self.ready.exists())
 
     def test_invalid_manifest_is_rejected(self):
         self.manifest.write_text(json.dumps({
