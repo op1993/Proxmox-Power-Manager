@@ -39,6 +39,10 @@ select_template() {
 }
 
 install_host_agent() {
+  install -d -m 0700 /etc/proxmox-power-manager
+  printf '%s\n' 'feature/installer-v0.6' > /etc/proxmox-power-manager/update-ref
+  chmod 0600 /etc/proxmox-power-manager/update-ref
+  install -m 0755 "$ROOT/scripts/ppm" /usr/local/bin/ppm
   mkdir -p /opt/proxmox-power-manager/agent /etc/proxmox-power-manager /var/lib/proxmox-power-manager
   install -m 0755 "$ROOT/agent/power_manager.py" /opt/proxmox-power-manager/agent/power_manager.py
   install -m 0755 "$ROOT/agent/control.py" /opt/proxmox-power-manager/agent/control.py
