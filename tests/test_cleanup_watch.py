@@ -28,7 +28,7 @@ class CleanupWatcherTests(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.manifest.write_text(json.dumps({
-            "schema": 1, "web_ctid": 101, "web_ct_created_by_ppm": True
+            "schema": 1, "web_ctid": 101, "web_ct_created_by_ppm": True, "installation_complete": True
         }))
         for name, value in [
             ("MANIFEST", self.manifest), ("RECOVERY", self.recovery),
@@ -37,6 +37,15 @@ class CleanupWatcherTests(unittest.TestCase):
             p = patch.object(watch, name, value)
             p.start()
             self.addCleanup(p.stop)
+
+    def test_incomplete_installation_is_disarmed(self):
+        self.manifest.write_text(json.dumps({
+            "schema": 1, "web_ctid": 101,
+            "web_ct_created_by_ppm": True, "installation_complete": False
+        }))
+        with patch.object(watch, "cluster_healthy", return_value=True):
+            self.assertEqual(watch.inspect(), "installation-incomplete")
+        self.assertFalse(self.counter.exists())
 
     def test_no_manifest(self):
         self.manifest.unlink()
