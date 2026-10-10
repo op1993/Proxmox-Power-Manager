@@ -21,6 +21,9 @@ class CleanupWatcherTests(unittest.TestCase):
         self.counter = d / "missing-count"
         self.ready = d / "cleanup-ready"
         self.config = d / "101.conf"
+        inventory = patch.object(watch, "container_registered_in_cluster", return_value=False)
+        inventory.start()
+        self.addCleanup(inventory.stop)
         p = patch.object(watch, "LXC_CONFIG_DIR", d)
         p.start()
         self.addCleanup(p.stop)
@@ -78,6 +81,18 @@ class CleanupWatcherTests(unittest.TestCase):
             self.assertFalse(self.counter.exists())
             self.recovery.unlink()
             self.assertEqual(watch.inspect(), "missing-unconfirmed")
+
+    def test_migrated_container_is_not_missing(self):
+        with patch.object(watch, "cluster_healthy", return_value=True), \
+             patch.object(watch, "container_registered_in_cluster", return_value=True):
+            self.assertEqual(watch.inspect(), "present-on-another-node")
+        self.assertFalse(self.counter.exists())
+
+    def test_inventory_failure_is_not_missing(self):
+        with patch.object(watch, "cluster_healthy", return_value=True), \
+             patch.object(watch, "container_registered_in_cluster", side_effect=OSError("offline")):
+            self.assertEqual(watch.inspect(), "cluster-inventory-unavailable")
+        self.assertFalse(self.counter.exists())
 
     def test_reappearance_resets_confirmation(self):
         with patch.object(watch, "cluster_healthy", return_value=True):
