@@ -16,6 +16,7 @@ RECOVERY = Path('/var/lib/proxmox-power-manager/state.json')
 COUNTER = Path('/var/lib/proxmox-power-manager/missing-count')
 READY = Path('/var/lib/proxmox-power-manager/cleanup-ready')
 MEMBERS = Path('/etc/pve/.members')
+LXC_CONFIG_DIR = Path('/etc/pve/lxc')
 
 
 def cluster_healthy():
@@ -43,7 +44,7 @@ def inspect():
         return 'recovery-pending'
     if not cluster_healthy():
         return 'cluster-unavailable'
-    if Path(f'/etc/pve/lxc/{ctid}.conf').is_file():
+    if (LXC_CONFIG_DIR / f'{ctid}.conf').is_file():
         COUNTER.unlink(missing_ok=True)
         READY.unlink(missing_ok=True)
         return 'present'
