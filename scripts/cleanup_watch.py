@@ -19,16 +19,26 @@ LXC_CONFIG_DIR = Path('/etc/pve/lxc')
 
 
 def cluster_healthy():
+    """Require an operational Proxmox API and quorate cluster if clustered."""
     try:
-        members = json.loads(MEMBERS.read_text())
-        if not members.get('cluster', {}).get('quorate', False):
+        result = subprocess.run(
+            ['pvesh', 'get', '/cluster/status', '--output-format', 'json'],
+            capture_output=True, text=True, timeout=15, check=True,
+        )
+        status = json.loads(result.stdout)
+        if not isinstance(status, list):
             return False
-        result = subprocess.run(['pvesh', 'get', '/cluster/status', '--output-format', 'json'],
-                                capture_output=True, text=True, timeout=15, check=True)
-        return isinstance(json.loads(result.stdout), list)
+        cluster = next(
+            (item for item in status if isinstance(item, dict)
+             and item.get('type') == 'cluster'), None,
+        )
+        if cluster is None:
+            # Standalone Proxmox nodes do not necessarily expose cluster quorum.
+            return any(isinstance(item, dict) and item.get('type') == 'node'
+                       and item.get('online') == 1 for item in status)
+        return cluster.get('quorate') == 1
     except (OSError, ValueError, subprocess.SubprocessError):
         return False
-
 
 def container_registered_in_cluster(ctid):
     """Fail closed when cluster inventory cannot be queried."""
