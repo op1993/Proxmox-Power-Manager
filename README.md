@@ -264,3 +264,7 @@ The installer verifies that the LXC can authenticate to the host HTTPS API, but 
 ## LXC lifecycle cleanup (work in progress)
 
 The installer now writes `/etc/proxmox-power-manager/installation.json` after creating a new managed web LXC. The file records the CTID and an ownership flag. Existing user-supplied containers are never marked as owned. The `scripts/cleanup_watch.py` observer reports `present`, `missing-unconfirmed`, `recovery-pending`, `unregistered` or `invalid-manifest` without deleting anything. **Automatic cleanup after Proxmox UI Destroy is not enabled yet.** A missing config alone is insufficient proof of deliberate deletion; the planned systemd timer must check cluster health, repeat observations and preserve recovery state before any cleanup action. Do not manually destroy the web LXC expecting host services to be removed automatically.
+
+### Confirmed LXC absence and host shutdown (experimental)
+
+The lifecycle observer now checks cluster quorum and requires three consecutive missing checks before writing `/var/lib/proxmox-power-manager/cleanup-ready`. `scripts/cleanup_host.sh` is a separate, manual, guarded action that disables the power manager host services but deliberately preserves all secrets and data. **The timer does not invoke this script yet**, and the script is not installed by the installer. This is not an automatic uninstall implementation. Do not rely on it for cleanup following a GUI Destroy operation.
