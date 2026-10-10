@@ -1,10 +1,12 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'agent'))
 spec = importlib.util.spec_from_file_location('ppm',ROOT/'agent/power_manager.py')
 ppm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ppm)
@@ -23,9 +25,10 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(p.stat().st_mode & 0o777,0o600)
     def test_ac_return_restores(self):
         cfg=ppm.validate({})
-        with patch.object(ppm,'status',return_value={'ac_online':True,'battery_percent':50,'enabled':True,'saved_state':None}), patch.object(ppm,'restore_guests') as restore:
+        with patch.object(ppm,'status',return_value={'ac_online':True,'battery_percent':50,'enabled':True,'saved_state':None,'battery_info':{'status':'Charging'},'charge_control':{'mode':0}}), patch('power_events.observe') as observe, patch.object(ppm,'restore_guests') as restore:
             ppm.cycle(cfg)
             restore.assert_called_once()
+            observe.assert_called_once()
     def test_dry_run_never_suspends(self):
         cfg=ppm.validate({'enabled':True})
         with patch.object(ppm,'status',return_value={'ac_online':False,'battery_percent':20,'enabled':True,'saved_state':None}),patch.object(ppm,'stop_guests') as stop:
