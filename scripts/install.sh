@@ -38,6 +38,20 @@ select_template() {
   printf '%s:vztmpl/%s' "$store" "$candidate"
 }
 
+install_host_agent() {
+  mkdir -p /opt/proxmox-power-manager/agent /etc/proxmox-power-manager /var/lib/proxmox-power-manager
+  install -m 0755 "$ROOT/agent/power_manager.py" /opt/proxmox-power-manager/agent/power_manager.py
+  install -m 0755 "$ROOT/agent/control.py" /opt/proxmox-power-manager/agent/control.py
+  install -m 0755 "$ROOT/agent/api.py" /opt/proxmox-power-manager/agent/api.py
+  if [[ ! -f /etc/proxmox-power-manager/config.json ]]; then
+    install -m 0600 "$ROOT/config/config.example.json" /etc/proxmox-power-manager/config.json
+  fi
+  install -m 0644 "$ROOT/systemd/proxmox-power-manager.service" /etc/systemd/system/proxmox-power-manager.service
+  systemctl daemon-reload
+  systemctl enable proxmox-power-manager.service
+  systemctl restart proxmox-power-manager.service
+}
+
 echo 'Proxmox Power Manager installer'
 echo '1) Agent only'
 echo '2) Agent + new LXC web UI (Debian 12/13 template)'
@@ -45,17 +59,7 @@ echo '3) Agent + existing Debian LXC web UI'
 read -rp 'Choose [1-3]: ' mode
 [[ "$mode" =~ ^[123]$ ]] || exit 1
 if [[ "$mode" == 1 ]]; then
-mkdir -p /opt/proxmox-power-manager/agent /etc/proxmox-power-manager /var/lib/proxmox-power-manager
-install -m 0755 "$ROOT/agent/power_manager.py" /opt/proxmox-power-manager/agent/power_manager.py
-install -m 0755 "$ROOT/agent/control.py" /opt/proxmox-power-manager/agent/control.py
-install -m 0755 "$ROOT/agent/api.py" /opt/proxmox-power-manager/agent/api.py
-if [[ ! -f /etc/proxmox-power-manager/config.json ]]; then
-  install -m 0600 "$ROOT/config/config.example.json" /etc/proxmox-power-manager/config.json
-fi
-install -m 0644 "$ROOT/systemd/proxmox-power-manager.service" /etc/systemd/system/proxmox-power-manager.service
-systemctl daemon-reload
-systemctl enable proxmox-power-manager.service
-systemctl restart proxmox-power-manager.service
+  install_host_agent
   echo 'Agent installed. Automatic sleep is disabled by default on first install.'
   exit 0
 fi
@@ -112,6 +116,7 @@ if [[ "$mode" == 2 ]]; then
     exit 1
   fi
   pct create "$ctid" "$template" --hostname ppm-web --ostype debian --unprivileged 1 --cores "$cores" --memory "$memory" --swap 256 --rootfs "${storage}:${disk}" --net0 "name=eth0,bridge=${bridge},ip=dhcp" --onboot 1 --features nesting=0
+  install -d -m 0700 /etc/proxmox-power-manager
   PPM_CTID="$ctid" python3 - <<'PYMANIFEST'
 import json, os, pathlib
 p = pathlib.Path('/etc/proxmox-power-manager/installation.json')
@@ -124,17 +129,7 @@ PYMANIFEST
   install -m 0644 "$ROOT/systemd/proxmox-power-manager-cleanup.service" /etc/systemd/system/
   install -m 0644 "$ROOT/systemd/proxmox-power-manager-cleanup.timer" /etc/systemd/system/
   systemctl daemon-reload
-mkdir -p /opt/proxmox-power-manager/agent /etc/proxmox-power-manager /var/lib/proxmox-power-manager
-install -m 0755 "$ROOT/agent/power_manager.py" /opt/proxmox-power-manager/agent/power_manager.py
-install -m 0755 "$ROOT/agent/control.py" /opt/proxmox-power-manager/agent/control.py
-install -m 0755 "$ROOT/agent/api.py" /opt/proxmox-power-manager/agent/api.py
-if [[ ! -f /etc/proxmox-power-manager/config.json ]]; then
-  install -m 0600 "$ROOT/config/config.example.json" /etc/proxmox-power-manager/config.json
-fi
-install -m 0644 "$ROOT/systemd/proxmox-power-manager.service" /etc/systemd/system/proxmox-power-manager.service
-systemctl daemon-reload
-systemctl enable proxmox-power-manager.service
-systemctl restart proxmox-power-manager.service
+  install_host_agent
   pct start "$ctid"
   echo "Waiting for CT $ctid network initialization..."
   for attempt in $(seq 1 30); do
@@ -149,17 +144,7 @@ else
   [[ "$answer" == 'y' ]] || exit 1
 fi
 if [[ "$mode" == 3 ]]; then
-mkdir -p /opt/proxmox-power-manager/agent /etc/proxmox-power-manager /var/lib/proxmox-power-manager
-install -m 0755 "$ROOT/agent/power_manager.py" /opt/proxmox-power-manager/agent/power_manager.py
-install -m 0755 "$ROOT/agent/control.py" /opt/proxmox-power-manager/agent/control.py
-install -m 0755 "$ROOT/agent/api.py" /opt/proxmox-power-manager/agent/api.py
-if [[ ! -f /etc/proxmox-power-manager/config.json ]]; then
-  install -m 0600 "$ROOT/config/config.example.json" /etc/proxmox-power-manager/config.json
-fi
-install -m 0644 "$ROOT/systemd/proxmox-power-manager.service" /etc/systemd/system/proxmox-power-manager.service
-systemctl daemon-reload
-systemctl enable proxmox-power-manager.service
-systemctl restart proxmox-power-manager.service
+  install_host_agent
 fi
 pct exec "$ctid" -- sh -c 'command -v apt-get >/dev/null && test -f /etc/debian_version' || { echo 'Requires Debian LXC'; exit 1; }
 if ! pct exec "$ctid" -- sh -c 'getent hosts deb.debian.org >/dev/null'; then
