@@ -60,6 +60,9 @@ def inspect():
         return 'invalid-manifest'
     if data.get('web_ct_created_by_ppm') is not True:
         return 'external-container'
+    if data.get('installation_complete') is not True:
+        reset_confirmation()
+        return 'installation-incomplete'
     if RECOVERY.exists():
         reset_confirmation()
         return 'recovery-pending'
