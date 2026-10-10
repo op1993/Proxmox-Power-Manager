@@ -122,6 +122,18 @@ Open `http://<LXC-IP>:8080` **from your trusted LAN only**. The first web instal
 
 **Important:** the development-branch bootstrap above is not a production-ready, pinned release. Do not enable unattended suspend before completing real hardware tests.
 
+## Command-line management (development branch)
+
+On a new installation the installer registers `/usr/local/bin/ppm`. Existing installations can install it once:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/op1993/Proxmox-Power-Manager/feature/installer-v0.6/scripts/ppm -o /tmp/ppm-cli
+install -m 0755 /tmp/ppm-cli /usr/local/bin/ppm
+ppm version
+```
+
+Then run `ppm update` to fetch and run the branch updater, `ppm status` for host status, or `ppm version` to show the configured update ref. Updates require automatic sleep disabled and no pending recovery state. This development updater executes code fetched from GitHub as root; review before use.
+
 ## Configuration
 
 Host agent config: `/etc/proxmox-power-manager/config.json` (example: [`config/config.example.json`](config/config.example.json)). The settings are JSON, not YAML.
