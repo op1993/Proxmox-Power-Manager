@@ -211,10 +211,15 @@ def cycle(cfg, dry_run=False):
     # Not all systems support deep sleep. Let rtcwake select the available mode.
     __import__('power_events').emit('SLEEP_STARTED', battery_percent=read_int(cfg['battery_path']), duration_minutes=minutes, reason='Достигнут порог автоматического сна')
     log.info('Requesting RTC suspend for %s minutes',minutes)
-    try: run('rtcwake','-m','mem','-s',str(minutes*60),timeout=minutes*60+300)
-    except (OSError,subprocess.SubprocessError) as e: log.error('Suspend/wake failed: %s',e)
+    try:
+        run('rtcwake','-m','mem','-s',str(minutes*60),timeout=minutes*60+300)
+    except (OSError,subprocess.SubprocessError) as e:
+        log.error('Suspend/wake failed: %s',e)
+        return False
     __import__('power_events').emit('SERVER_WOKE', battery_percent=read_int(cfg['battery_path']), reason='Возврат из rtcwake')
-    if ac_online(cfg): restore_guests(cfg)
+    # A successful RTC wake requests an immediate full cycle, including AC and battery checks.
+    # Do not recurse: the main loop reloads configuration and rechecks guest recovery state.
+    return True
 
 
 def main():
@@ -231,8 +236,12 @@ def main():
         if args.command in ('once','dry-run'):
             cycle(cfg,dry_run=args.command=='dry-run'); return
         while True:
-            try: cycle(load_config())
+            woke = False
+            try: woke = cycle(load_config()) is True
             except Exception: log.exception('Cycle failed')
+            if woke:
+                log.info('RTC wake completed; checking AC and battery immediately')
+                continue
             time.sleep(load_config()['check_seconds'])
 
 if __name__=='__main__': main()
