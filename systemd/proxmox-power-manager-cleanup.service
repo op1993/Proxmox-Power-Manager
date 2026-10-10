@@ -1,0 +1,9 @@
+[Unit]
+Description=Proxmox Power Manager LXC lifecycle check
+After=pve-cluster.service
+ConditionPathExists=/etc/proxmox-power-manager/installation.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/proxmox-power-manager/cleanup/cleanup_watch.py
+NoNewPrivileges=true
