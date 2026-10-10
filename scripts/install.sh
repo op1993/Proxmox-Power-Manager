@@ -241,7 +241,7 @@ from pathlib import Path
 p = Path('/etc/proxmox-power-manager/installation.json')
 data = json.loads(p.read_text())
 data['installation_complete'] = True
-p.write_text(json.dumps(data, indent=2) + '\\n')
+p.write_text(json.dumps(data, indent=2) + '\n')
 p.chmod(0o600)
 PYMANIFEST_DONE
   systemctl enable --now proxmox-power-manager-cleanup.timer
