@@ -47,6 +47,16 @@ class CleanupWatcherTests(unittest.TestCase):
             self.assertEqual(watch.inspect(), "installation-incomplete")
         self.assertFalse(self.counter.exists())
 
+    def test_invalid_ownership_clears_stale_marker(self):
+        self.counter.write_text("3\\n")
+        self.ready.write_text("101\\n")
+        self.manifest.write_text(json.dumps({
+            "schema": 1, "web_ctid": 101, "web_ct_created_by_ppm": False
+        }))
+        self.assertEqual(watch.inspect(), "external-container")
+        self.assertFalse(self.counter.exists())
+        self.assertFalse(self.ready.exists())
+
     def test_no_manifest(self):
         self.manifest.unlink()
         self.assertEqual(watch.inspect(), "unregistered")
