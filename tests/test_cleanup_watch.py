@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -37,6 +38,16 @@ class CleanupWatcherTests(unittest.TestCase):
             p = patch.object(watch, name, value)
             p.start()
             self.addCleanup(p.stop)
+
+    def test_standalone_node_health(self):
+        payload = json.dumps([{"type": "node", "name": "pve", "online": 1}])
+        with patch.object(watch.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, payload, "")):
+            self.assertTrue(watch.cluster_healthy())
+
+    def test_cluster_requires_quorum(self):
+        payload = json.dumps([{"type": "cluster", "name": "pve", "quorate": 0}])
+        with patch.object(watch.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, payload, "")):
+            self.assertFalse(watch.cluster_healthy())
 
     def test_incomplete_installation_is_disarmed(self):
         self.manifest.write_text(json.dumps({
