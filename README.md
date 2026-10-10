@@ -237,7 +237,7 @@ python3 -m unittest discover -s tests -v
 bash -n scripts/install.sh scripts/update.sh scripts/uninstall.sh
 ```
 
-The project has a GitHub Actions workflow in `.github/workflows/check.yml`. To publish, create your own GitHub repository, review the contents, and push the source. No real GitHub repository is created by this archive.
+The project has a GitHub Actions workflow in `.github/workflows/check.yml`. Project repository: https://github.com/op1993/Proxmox-Power-Manager. Review changes and CI results before merging.
 
 ## Project structure
 
