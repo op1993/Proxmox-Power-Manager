@@ -49,6 +49,7 @@ install_host_agent() {
   install -m 0755 "$ROOT/agent/api.py" /opt/proxmox-power-manager/agent/api.py
   install -m 0755 "$ROOT/agent/simulator.py" /opt/proxmox-power-manager/agent/simulator.py
   install -m 0755 "$ROOT/agent/charge_control.py" /opt/proxmox-power-manager/agent/charge_control.py
+  install -m 0755 "$ROOT/agent/battery_info.py" /opt/proxmox-power-manager/agent/battery_info.py
   if [[ ! -f /etc/proxmox-power-manager/config.json ]]; then
     install -m 0600 "$ROOT/config/config.example.json" /etc/proxmox-power-manager/config.json
   fi
