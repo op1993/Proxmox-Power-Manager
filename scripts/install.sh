@@ -109,6 +109,11 @@ if [[ "$mode" == 2 ]]; then
   [[ "$confirmed" =~ ^[Yy]$ ]] || exit 0
   pct create "$ctid" "$template" --hostname ppm-web --ostype debian --unprivileged 1 --cores "$cores" --memory "$memory" --swap 256 --rootfs "${storage}:${disk}" --net0 "name=eth0,bridge=${bridge},ip=dhcp" --onboot 1 --features nesting=0
   pct start "$ctid"
+  echo "Waiting for CT $ctid network initialization..."
+  for attempt in $(seq 1 30); do
+    if pct exec "$ctid" -- sh -c 'getent hosts deb.debian.org >/dev/null' >/dev/null 2>&1; then break; fi
+    sleep 2
+  done
 else
   read -rp 'Existing Debian CTID: ' ctid
   [[ "$ctid" =~ ^[0-9]{3,6}$ ]] || exit 1
@@ -117,6 +122,10 @@ else
   [[ "$answer" == 'y' ]] || exit 1
 fi
 pct exec "$ctid" -- sh -c 'command -v apt-get >/dev/null && test -f /etc/debian_version' || { echo 'Requires Debian LXC'; exit 1; }
+if ! pct exec "$ctid" -- sh -c 'getent hosts deb.debian.org >/dev/null'; then
+  echo 'Container DNS/network unavailable; cannot install dependencies' >&2
+  exit 1
+fi
 pct exec "$ctid" -- apt-get update
 pct exec "$ctid" -- apt-get install -y python3 ca-certificates
 pct exec "$ctid" -- mkdir -p /opt/proxmox-power-manager/web /etc/proxmox-power-manager
@@ -182,6 +191,12 @@ pct exec "$ctid" -- systemctl is-active --quiet proxmox-power-manager-web.servic
   echo 'Web service failed to start; inspect container logs' >&2; exit 1;
 }
 echo 'Web UI installed. Access port 8080 on the LXC IP (LAN only).'
+echo 'Testing API connectivity from the container...'
+if pct exec "$ctid" -- python3 -c 'import os,ssl,urllib.request; p="/etc/proxmox-power-manager/"; url=open(p+"web.env").read().split("PPM_API_URL=",1)[1].splitlines()[0]; token=open(p+"api-token").read().strip(); req=urllib.request.Request(url+"/v1/status",headers={"Authorization":"Bearer "+token}); print("API status:",urllib.request.urlopen(req,context=ssl.create_default_context(cafile=p+"api.crt"),timeout=10).status)'; then
+  echo 'API connection verified.'
+else
+  echo 'WARNING: API connection failed. Check IP, firewall and API service logs.' >&2
+fi
 echo "Authentication settings: /etc/proxmox-power-manager/auth.json (inside CT $ctid)"
 echo 'WARNING: Plain HTTP on port 8080. Restrict access to LAN; use HTTPS reverse proxy for remote access.'
 echo 'WARNING: API token grants privileged power-manager settings access. Keep it secret; restrict TCP/8765 to the web LXC IP with a firewall.'
