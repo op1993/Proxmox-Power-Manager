@@ -1,11 +1,39 @@
 let csrf='';
 const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str']];
+const settingsGroups=[
+  {title:'Зарядка аккумулятора',description:'Lenovo Conservation Mode — экспериментальная функция. Указанный верхний порог не гарантирует физическую остановку зарядки.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
+  {title:'Автоматический сон',description:'Пороги заряда для остановки гостей и перехода Proxmox в сон.',keys:['enabled','sleep_threshold','low_threshold','critical_threshold']},
+  {title:'Пробуждение и восстановление',description:'Интервалы пробуждения и условия запуска контейнеров и VM.',keys:['normal_wake_minutes','low_wake_minutes','minimum_restore_percent']},
+  {title:'Контейнеры и виртуальные машины',description:'Управление гостями перед переходом в сон.',keys:['manage_vms','shutdown_timeout']},
+  {title:'Дополнительные параметры',description:'Период проверки и действие при критическом заряде.',keys:['check_seconds','critical_action']}
+];
+function renderSettings(cfg){
+  const root=el('settings');root.replaceChildren();
+  const definitions=new Map(fields.map(field=>[field[0],field]));
+  for(const group of settingsGroups){
+    const details=document.createElement('details');details.className='settings-group';
+    details.open=true;
+    const summary=document.createElement('summary');summary.textContent=group.title;details.append(summary);
+    const hint=document.createElement('p');hint.className='settings-hint';hint.textContent=group.description;details.append(hint);
+    for(const key of group.keys){
+      const field=definitions.get(key);if(!field)continue;
+      const [,label,type]=field;
+      const row=document.createElement('label');row.textContent=label;
+      const inp=document.createElement('input');inp.id='cfg-'+key;
+      inp.type=type==='bool'?'checkbox':type==='str'?'text':'number';
+      if(type==='bool')inp.checked=cfg[key]===true;
+      else inp.value=cfg[key]??'';
+      row.append(inp);details.append(row);
+    }
+    root.append(details);
+  }
+}
 const el=id=>document.getElementById(id);
 async function request(path,data){const r=await fetch('/api/'+path,{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:data===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data)});const j=await r.json();if(!r.ok||j.error)throw Error(j.error||'HTTP '+r.status);return j}
 async function busy(id,fn){const btn=el(id);if(btn.disabled)return;const old=btn.textContent;btn.disabled=true;btn.replaceChildren();const spin=document.createElement('span');spin.className='spinner';spin.setAttribute('aria-hidden','true');btn.append(spin,document.createTextNode('Загрузка...'));try{return await fn()}finally{btn.disabled=false;btn.textContent=old}}
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg]=await Promise.all([request('status'),request('config')]);el('status').textContent=`AC: ${status.ac_online?'Online':'Offline'} | Battery: ${status.battery_percent}%\nRunning LXC: ${(status.running_containers||[]).join(', ')||'none'}\nRecovery state: ${status.saved_state?'present':'none'}\nCharge control: ${status.charge_control?.supported?'supported':'unavailable'} | Mode: ${status.charge_control?.mode??'unknown'} | Auto: ${status.charge_control?.enabled?'enabled':'disabled'}`;const div=el('settings');div.replaceChildren();for(const [key,label,type] of fields){const row=document.createElement('label');row.textContent=label;const inp=document.createElement('input');inp.id='cfg-'+key;inp.type=type==='bool'?'checkbox':type==='str'?'text':'number';if(type==='bool')inp.checked=cfg[key];else inp.value=cfg[key];row.append(inp);div.append(row)}}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg]=await Promise.all([request('status'),request('config')]);el('status').textContent=`AC: ${status.ac_online?'Online':'Offline'} | Battery: ${status.battery_percent}%\nRunning LXC: ${(status.running_containers||[]).join(', ')||'none'}\nRecovery state: ${status.saved_state?'present':'none'}\nCharge control: ${status.charge_control?.supported?'supported':'unavailable'} | Mode: ${status.charge_control?.mode??'unknown'} | Auto: ${status.charge_control?.enabled?'enabled':'disabled'}`;renderSettings(cfg)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
