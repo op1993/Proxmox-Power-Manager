@@ -48,6 +48,7 @@ function renderInfo(status){
   card('Аккумулятор',status.battery_percent+'%',({Charging:'Заряжается',Discharging:'Разряжается',Full:'Полный заряд','Not charging':'Не заряжается'})[info.status]||info.status||'Статус неизвестен');
   const time=info.status==='Discharging'?info.time_remaining_minutes:info.status==='Charging'?info.time_to_target_minutes:null;
   card(info.status==='Discharging'?'Осталось работать':info.status==='Charging'?'До '+(info.target_percent??100)+'%':'Прогноз времени',duration(time),time===null?'Недостаточно данных':'При текущей скорости, приблизительно');
+  card('Мощность аккумулятора',info.power_w!=null?Number(info.power_w).toLocaleString('ru-RU',{maximumFractionDigits:2})+' Вт':'Нет данных',info.status==='Discharging'?'Расход от батареи':info.status==='Charging'?'Мощность зарядки':'Не измеряет расход из розетки');
   card('Работающие гости',(status.running_containers||[]).length+' LXC / '+(status.running_vms||[]).length+' VM','Восстановление: '+(status.saved_state?'ожидается':'не требуется'));
   root.append(cards);
   const track=document.createElement('div');track.className='battery-track';
@@ -56,8 +57,8 @@ function renderInfo(status){
   const details=document.createElement('div');details.className='info-details';
   const items=[
     'Conservation Mode: '+(charge.supported?(charge.mode===1?'Long Life':charge.mode===0?'Standard':'неизвестен'):'не поддерживается'),
-    'Автоматическая зарядка: '+(charge.enabled?'включена':'выключена'),
-    'Автоматический сон: '+(status.enabled?'включён':'выключен'),
+    'Автоматическое управление зарядкой: '+(charge.enabled?'включена':'выключена'),
+    'Автоматическое управление питанием сервера: '+(status.enabled?'включён':'выключен'),
     'LXC: '+((status.running_containers||[]).join(', ')||'нет')
   ];
   if(info.power_w!=null)items.push('Мощность батареи: '+info.power_w+' Вт');
