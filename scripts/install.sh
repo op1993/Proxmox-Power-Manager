@@ -119,6 +119,12 @@ p.write_text(json.dumps({'schema': 1, 'web_ctid': int(os.environ['PPM_CTID']),
                          'web_ct_created_by_ppm': True}, indent=2) + '\n')
 p.chmod(0o600)
 PYMANIFEST
+  install -d -m 0755 /opt/proxmox-power-manager/cleanup
+  install -m 0755 "$ROOT/scripts/cleanup_watch.py" /opt/proxmox-power-manager/cleanup/cleanup_watch.py
+  install -m 0644 "$ROOT/systemd/proxmox-power-manager-cleanup.service" /etc/systemd/system/
+  install -m 0644 "$ROOT/systemd/proxmox-power-manager-cleanup.timer" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable --now proxmox-power-manager-cleanup.timer
   pct start "$ctid"
   echo "Waiting for CT $ctid network initialization..."
   for attempt in $(seq 1 30); do
