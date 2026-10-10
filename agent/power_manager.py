@@ -163,7 +163,9 @@ def status(cfg):
     return dict(ac_online=ac_online(cfg), battery_percent=read_int(cfg['battery_path']),
                 enabled=cfg['enabled'], saved_state=state(),
                 running_containers=running_cts(), running_vms=running_vms(),
-                charge_control=__import__('charge_control').report(cfg))
+                charge_control=__import__('charge_control').report(cfg),
+                battery_info=__import__('battery_info').snapshot(cfg['battery_path'],
+                    cfg['charge_upper_percent'] if cfg['charge_control_enabled'] else 100))
 
 
 def critical(cfg, dry_run=False):
