@@ -86,9 +86,34 @@ function renderInfo(status){
   for(const item of items){const span=document.createElement('span');span.textContent=item;details.append(span)}
   root.append(details);
 }
+function renderHistory(data){
+  const root=el('history');root.replaceChildren();
+  const events=(data.events||[]).slice().reverse();
+  if(!events.length){root.textContent='Сегодня событий пока нет';return}
+  const titles={AC_LOST:'Электричество отключено',AC_RESTORED:'Электричество восстановлено',
+    BATTERY_STATUS:'Изменение состояния зарядки',CONSERVATION_CHANGED:'Режим аккумулятора изменён',
+    BATTERY_THRESHOLD:'Достигнут порог заряда',SLEEP_STARTED:'Сервер переходит в сон',
+    SERVER_WOKE:'Сервер проснулся',GUESTS_RESTORED:'Контейнеры восстановлены'};
+  const statuses={Charging:'Заряжается',Discharging:'Разряжается',Full:'Полный заряд','Not charging':'Не заряжается'};
+  for(const event of events){
+    const item=document.createElement('div');item.className='history-item';
+    const time=document.createElement('div');time.className='history-time';
+    time.textContent=new Date(event.timestamp_ms).toLocaleTimeString('ru-RU');
+    const title=document.createElement('strong');title.textContent=titles[event.type]||event.type;
+    const reason=document.createElement('div');reason.className='history-reason';
+    const parts=[];
+    if(event.reason)parts.push(event.reason);
+    if(event.status)parts.push(statuses[event.status]||event.status);
+    if(event.battery_percent!=null)parts.push('Заряд: '+event.battery_percent+'%');
+    if(event.duration_minutes!=null)parts.push('Сон: '+event.duration_minutes+' мин');
+    if(event.mode!=null)parts.push('Conservation Mode: '+(event.mode===1?'Long Life':'Standard'));
+    reason.textContent=parts.join(' · ');
+    item.append(time,title,reason);root.append(item);
+  }
+}
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg]=await Promise.all([request('status'),request('config')]);renderInfo(status);renderSettings(cfg)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message}))]);renderInfo(status);renderSettings(cfg);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
