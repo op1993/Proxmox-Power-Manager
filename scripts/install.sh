@@ -116,7 +116,7 @@ if [[ "$mode" == 2 ]]; then
 import json, os, pathlib
 p = pathlib.Path('/etc/proxmox-power-manager/installation.json')
 p.write_text(json.dumps({'schema': 1, 'web_ctid': int(os.environ['PPM_CTID']),
-                         'web_ct_created_by_ppm': True}, indent=2) + '\n')
+                         'web_ct_created_by_ppm': True, 'installation_complete': False}, indent=2) + '\n')
 p.chmod(0o600)
 PYMANIFEST
   install -d -m 0755 /opt/proxmox-power-manager/cleanup
@@ -124,7 +124,6 @@ PYMANIFEST
   install -m 0644 "$ROOT/systemd/proxmox-power-manager-cleanup.service" /etc/systemd/system/
   install -m 0644 "$ROOT/systemd/proxmox-power-manager-cleanup.timer" /etc/systemd/system/
   systemctl daemon-reload
-  systemctl enable --now proxmox-power-manager-cleanup.timer
   pct start "$ctid"
   echo "Waiting for CT $ctid network initialization..."
   for attempt in $(seq 1 30); do
@@ -213,6 +212,18 @@ if pct exec "$ctid" -- python3 -c 'import os,ssl,urllib.request; p="/etc/proxmox
   echo 'API connection verified.'
 else
   echo 'WARNING: API connection failed. Check IP, firewall and API service logs.' >&2
+fi
+if [[ "$mode" == 2 ]]; then
+  python3 - <<'PYMANIFEST_DONE'
+import json
+from pathlib import Path
+p = Path('/etc/proxmox-power-manager/installation.json')
+data = json.loads(p.read_text())
+data['installation_complete'] = True
+p.write_text(json.dumps(data, indent=2) + '\\n')
+p.chmod(0o600)
+PYMANIFEST_DONE
+  systemctl enable --now proxmox-power-manager-cleanup.timer
 fi
 echo "Authentication settings: /etc/proxmox-power-manager/auth.json (inside CT $ctid)"
 echo 'WARNING: Plain HTTP on port 8080. Restrict access to LAN; use HTTPS reverse proxy for remote access.'
