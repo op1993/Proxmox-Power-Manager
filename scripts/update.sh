@@ -7,7 +7,7 @@ BASE=/opt/proxmox-power-manager
 CFG=/etc/proxmox-power-manager
 [[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
 command -v pct >/dev/null || { echo 'Proxmox pct command required' >&2; exit 1; }
-python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info}.py "$ROOT"/web/{server,auth}.py
+python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history}.py "$ROOT"/web/{server,auth}.py
 if [[ -d "$ROOT/tests" ]]; then
   python3 -m unittest discover -s "$ROOT/tests" -v
 fi
@@ -70,7 +70,7 @@ rollback() {
   fi
 }
 trap rollback ERR
-for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py; do
+for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py; do
   install -m 0755 "$ROOT/agent/$f" "$BASE/agent/$f"
 done
 for unit in proxmox-power-manager.service proxmox-power-manager-api.service; do
