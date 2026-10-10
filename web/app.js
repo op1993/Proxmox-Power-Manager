@@ -1,11 +1,8 @@
 let csrf='';
 const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str']];
 const settingsGroups=[
-  {title:'Зарядка аккумулятора',description:'Lenovo Conservation Mode — экспериментальная функция. Указанный верхний порог не гарантирует физическую остановку зарядки.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
-  {title:'Автоматический сон',description:'Пороги заряда для остановки гостей и перехода Proxmox в сон.',keys:['enabled','sleep_threshold','low_threshold','critical_threshold']},
-  {title:'Пробуждение и восстановление',description:'Интервалы пробуждения и условия запуска контейнеров и VM.',keys:['normal_wake_minutes','low_wake_minutes','minimum_restore_percent']},
-  {title:'Контейнеры и виртуальные машины',description:'Управление гостями перед переходом в сон.',keys:['manage_vms','shutdown_timeout']},
-  {title:'Дополнительные параметры',description:'Период проверки и действие при критическом заряде.',keys:['check_seconds','critical_action']}
+  {title:'Управление зарядом аккумулятора',description:'Lenovo Conservation Mode: включение и пороги зарядки. Аппаратное ограничение может отличаться от заданного.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
+  {title:'Управление отключением/включением сервера',description:'Автоматический сон, пробуждение, остановка и восстановление LXC/VM, критические пороги и дополнительные параметры.',keys:['enabled','sleep_threshold','low_threshold','critical_threshold','normal_wake_minutes','low_wake_minutes','minimum_restore_percent','manage_vms','shutdown_timeout','check_seconds','critical_action']}
 ];
 function renderSettings(cfg){
   const root=el('settings');root.replaceChildren();
