@@ -29,6 +29,16 @@ class AgentTests(unittest.TestCase):
             ppm.cycle(cfg)
             restore.assert_called_once()
             observe.assert_called_once()
+    def test_rtc_wake_requests_immediate_recheck(self):
+        cfg=ppm.validate({'enabled':True})
+        st={'ac_online':False,'battery_percent':20,'enabled':True,'saved_state':None,
+            'battery_info':{'status':'Discharging'},'charge_control':{'mode':0}}
+        with patch.object(ppm,'status',return_value=st), patch('power_events.observe'), patch('power_events.emit'), \
+             patch.object(ppm,'stop_guests',return_value=True), patch.object(ppm,'ac_online',return_value=False), \
+             patch.object(ppm,'read_int',return_value=20), patch.object(ppm,'run') as runner:
+            self.assertIs(ppm.cycle(cfg), True)
+            runner.assert_called_once_with('rtcwake','-m','mem','-s','900',timeout=1200)
+
     def test_dry_run_never_suspends(self):
         cfg=ppm.validate({'enabled':True})
         with patch.object(ppm,'status',return_value={'ac_online':False,'battery_percent':20,'enabled':True,'saved_state':None}),patch.object(ppm,'stop_guests') as stop:
