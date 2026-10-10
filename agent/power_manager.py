@@ -156,6 +156,7 @@ def restore_guests(cfg):
     if not failed and all(ct_running(c) for c in saved['containers']) and all(vm_running(v) for v in saved['vms']):
         STATE.unlink(missing_ok=True)
         log.info('All recorded guests restored; state cleared')
+        __import__('power_events').emit('GUESTS_RESTORED', reason='Электросеть восстановлена')
     else: log.error('Restore incomplete; state retained: %s',failed)
 
 
@@ -182,6 +183,12 @@ def critical(cfg, dry_run=False):
 
 def cycle(cfg, dry_run=False):
     st = status(cfg)
+    if not dry_run:
+        try:
+            from power_events import observe
+            observe(st['ac_online'], st['battery_percent'], st['battery_info'].get('status'), st['charge_control'].get('mode'), cfg)
+        except (OSError, ValueError) as exc:
+            log.warning('Event monitoring unavailable: %s', exc)
     log.info('AC=%s battery=%s%% enabled=%s',st['ac_online'],st['battery_percent'],cfg['enabled'])
     if st['ac_online']:
         if not dry_run: restore_guests(cfg)
@@ -202,9 +209,11 @@ def cycle(cfg, dry_run=False):
     if read_int(cfg['battery_path']) <= cfg['critical_threshold']:
         critical(cfg); return
     # Not all systems support deep sleep. Let rtcwake select the available mode.
+    __import__('power_events').emit('SLEEP_STARTED', battery_percent=read_int(cfg['battery_path']), duration_minutes=minutes, reason='Достигнут порог автоматического сна')
     log.info('Requesting RTC suspend for %s minutes',minutes)
     try: run('rtcwake','-m','mem','-s',str(minutes*60),timeout=minutes*60+300)
     except (OSError,subprocess.SubprocessError) as e: log.error('Suspend/wake failed: %s',e)
+    __import__('power_events').emit('SERVER_WOKE', battery_percent=read_int(cfg['battery_path']), reason='Возврат из rtcwake')
     if ac_online(cfg): restore_guests(cfg)
 
 
