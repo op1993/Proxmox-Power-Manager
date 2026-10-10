@@ -117,6 +117,7 @@ if [[ "$mode" == 2 ]]; then
   fi
   pct create "$ctid" "$template" --hostname ppm-web --ostype debian --unprivileged 1 --cores "$cores" --memory "$memory" --swap 256 --rootfs "${storage}:${disk}" --net0 "name=eth0,bridge=${bridge},ip=dhcp" --onboot 1 --features nesting=0
   install -d -m 0700 /etc/proxmox-power-manager
+  # Record the managed CT immediately. A failed install leaves it registered but disarmed.
   PPM_CTID="$ctid" python3 - <<'PYMANIFEST'
 import json, os, pathlib
 p = pathlib.Path('/etc/proxmox-power-manager/installation.json')
