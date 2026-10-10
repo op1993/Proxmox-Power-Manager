@@ -23,7 +23,7 @@ template_storage() {
   pvesm status --content vztmpl | awk 'NR>1 && $3=="active" {print $1; exit}'
 }
 root_storage() {
-  pvesm status --content rootdir | awk 'NR>1 && $3=="active" {if($1=="local-lvm"){print $1; exit} if(!first)first=$1} END {if(!seen && first)print first}'
+  pvesm status --content rootdir | awk 'NR>1 && $3=="active" {if($1=="local-lvm")preferred=$1; if(!first)first=$1} END {if(preferred)print preferred; else if(first)print first}'
 }
 select_template() {
   local store="$1" found candidate
