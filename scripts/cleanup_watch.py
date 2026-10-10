@@ -35,8 +35,8 @@ def cluster_healthy():
         if cluster is None:
             # Standalone Proxmox nodes do not necessarily expose cluster quorum.
             return any(isinstance(item, dict) and item.get('type') == 'node'
-                       and item.get('online') == 1 for item in status)
-        return cluster.get('quorate') == 1
+                       and item.get('online') in (1, True, '1') for item in status)
+        return cluster.get('quorate') in (1, True, '1')
     except (OSError, ValueError, subprocess.SubprocessError):
         return False
 
