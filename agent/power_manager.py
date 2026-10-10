@@ -19,7 +19,7 @@ DEFAULTS = dict(enabled=False, sleep_threshold=30, low_threshold=15,
                 ac_path='/sys/class/power_supply/ADP0/online',
                 battery_path='/sys/class/power_supply/BAT0/capacity',
                 manage_vms=True, critical_action='poweroff',
-                minimum_restore_percent=0)
+                minimum_restore_percent=0, charge_control_enabled=False,\n                charge_lower_percent=70, charge_upper_percent=80)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', stream=sys.stdout)
 log = logging.getLogger('ppm')
 
@@ -43,7 +43,7 @@ def validate(cfg):
     for k in ('sleep_threshold','low_threshold','critical_threshold','normal_wake_minutes',
               'low_wake_minutes','check_seconds','shutdown_timeout','minimum_restore_percent'):
         if type(cfg[k]) is not int: raise ValueError(f'{k} must be integer')
-    if type(cfg['enabled']) is not bool or type(cfg['manage_vms']) is not bool:
+    if type(cfg['charge_control_enabled']) is not bool: raise ValueError('charge_control_enabled must be boolean')\n    for k in ('charge_lower_percent','charge_upper_percent'):\n        if type(cfg[k]) is not int: raise ValueError(f'{k} must be integer')\n    if not 0 <= cfg['charge_lower_percent'] < cfg['charge_upper_percent'] <= 100:\n        raise ValueError('Invalid charge control thresholds')\n    if type(cfg['enabled']) is not bool or type(cfg['manage_vms']) is not bool:
         raise ValueError('enabled/manage_vms must be boolean')
     if not (0 < cfg['critical_threshold'] < cfg['low_threshold'] < cfg['sleep_threshold'] <= 100):
         raise ValueError('Thresholds must satisfy critical < low < sleep <= 100')
@@ -156,7 +156,7 @@ def restore_guests(cfg):
 def status(cfg):
     return dict(ac_online=ac_online(cfg), battery_percent=read_int(cfg['battery_path']),
                 enabled=cfg['enabled'], saved_state=state(),
-                running_containers=running_cts(), running_vms=running_vms())
+                running_containers=running_cts(), running_vms=running_vms(),\n                charge_control=__import__('charge_control').report(cfg))
 
 
 def critical(cfg, dry_run=False):
