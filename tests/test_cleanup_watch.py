@@ -34,6 +34,7 @@ class CleanupWatcherTests(unittest.TestCase):
             p = patch.object(watch, name, value)
             p.start()
             self.addCleanup(p.stop)
+
     def test_no_manifest(self):
         self.manifest.unlink()
         self.assertEqual(watch.inspect(), "unregistered")
