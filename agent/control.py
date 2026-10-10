@@ -40,6 +40,9 @@ def execute(action, changes=None):
         proc = subprocess.run(['/usr/bin/python3','/opt/proxmox-power-manager/agent/power_manager.py','status'], capture_output=True, text=True, timeout=25)
         if proc.returncode: raise RuntimeError('Status unavailable')
         return json.loads(proc.stdout)
+    if action == 'history':
+        from event_history import today
+        return today()
     if action == 'config':
         return read_config()
     if action == 'update':
