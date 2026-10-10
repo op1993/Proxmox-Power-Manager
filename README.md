@@ -268,3 +268,7 @@ The installer now writes `/etc/proxmox-power-manager/installation.json` after cr
 ### Confirmed LXC absence and host shutdown (experimental)
 
 The lifecycle observer now checks cluster quorum and requires three consecutive missing checks before writing `/var/lib/proxmox-power-manager/cleanup-ready`. `scripts/cleanup_host.sh` is a separate, manual, guarded action that disables the power manager host services but deliberately preserves all secrets and data. **The timer does not invoke this script yet**, and the script is not installed by the installer. This is not an automatic uninstall implementation. Do not rely on it for cleanup following a GUI Destroy operation.
+
+### Installation safety guard
+
+For newly created web containers, the installer registers `installation_complete: false` first and changes it to `true` only after the web service starts and API connectivity has been checked. The cleanup observer ignores incomplete installations, and the timer is enabled only at the end of the new-LXC installation path. If installation fails, inspect and resolve the partial installation manually; the installer does not yet roll back created containers. Automatic cleanup is still disabled and requires a separate safety review.
