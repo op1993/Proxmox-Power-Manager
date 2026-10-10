@@ -28,9 +28,45 @@ function renderSettings(cfg){
 const el=id=>document.getElementById(id);
 async function request(path,data){const r=await fetch('/api/'+path,{method:data===undefined?'GET':'POST',credentials:'same-origin',headers:data===undefined?{}:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data)});const j=await r.json();if(!r.ok||j.error)throw Error(j.error||'HTTP '+r.status);return j}
 async function busy(id,fn){const btn=el(id);if(btn.disabled)return;const old=btn.textContent;btn.disabled=true;btn.replaceChildren();const spin=document.createElement('span');spin.className='spinner';spin.setAttribute('aria-hidden','true');btn.append(spin,document.createTextNode('Загрузка...'));try{return await fn()}finally{btn.disabled=false;btn.textContent=old}}
+function duration(minutes){
+  if(!Number.isFinite(minutes)||minutes<0)return 'Нет данных';
+  const h=Math.floor(minutes/60),m=Math.round(minutes%60);
+  return h? h+' ч '+m+' мин':m+' мин';
+}
+function renderInfo(status){
+  const root=el('status');root.replaceChildren();
+  const info=status.battery_info||{}, charge=status.charge_control||{};
+  const cards=document.createElement('div');cards.className='info-grid';
+  function card(label,value,note){
+    const c=document.createElement('div');c.className='info-card';
+    const title=document.createElement('div');title.className='caption';title.textContent=label;
+    const metric=document.createElement('div');metric.className='metric';metric.textContent=value;
+    const detail=document.createElement('div');detail.className='caption';detail.textContent=note;
+    c.append(title,metric,detail);cards.append(c);
+  }
+  card('Электросеть',status.ac_online?'Подключена':'Отключена',status.ac_online?'Питание от сети':'Питание от аккумулятора');
+  card('Аккумулятор',status.battery_percent+'%',({Charging:'Заряжается',Discharging:'Разряжается',Full:'Полный заряд','Not charging':'Не заряжается'})[info.status]||info.status||'Статус неизвестен');
+  const time=info.status==='Discharging'?info.time_remaining_minutes:info.status==='Charging'?info.time_to_target_minutes:null;
+  card(info.status==='Discharging'?'Осталось работать':info.status==='Charging'?'До '+(info.target_percent??100)+'%':'Прогноз времени',duration(time),time===null?'Недостаточно данных':'При текущей скорости, приблизительно');
+  card('Работающие гости',(status.running_containers||[]).length+' LXC / '+(status.running_vms||[]).length+' VM','Восстановление: '+(status.saved_state?'ожидается':'не требуется'));
+  root.append(cards);
+  const track=document.createElement('div');track.className='battery-track';
+  const fill=document.createElement('div');fill.className='battery-fill';fill.style.width=Math.max(0,Math.min(100,Number(status.battery_percent)||0))+'%';
+  track.append(fill);root.append(track);
+  const details=document.createElement('div');details.className='info-details';
+  const items=[
+    'Conservation Mode: '+(charge.supported?(charge.mode===1?'Long Life':charge.mode===0?'Standard':'неизвестен'):'не поддерживается'),
+    'Автоматическая зарядка: '+(charge.enabled?'включена':'выключена'),
+    'Автоматический сон: '+(status.enabled?'включён':'выключен'),
+    'LXC: '+((status.running_containers||[]).join(', ')||'нет')
+  ];
+  if(info.power_w!=null)items.push('Мощность батареи: '+info.power_w+' Вт');
+  for(const item of items){const span=document.createElement('span');span.textContent=item;details.append(span)}
+  root.append(details);
+}
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg]=await Promise.all([request('status'),request('config')]);el('status').textContent=`AC: ${status.ac_online?'Online':'Offline'} | Battery: ${status.battery_percent}%\nRunning LXC: ${(status.running_containers||[]).join(', ')||'none'}\nRecovery state: ${status.saved_state?'present':'none'}\nCharge control: ${status.charge_control?.supported?'supported':'unavailable'} | Mode: ${status.charge_control?.mode??'unknown'} | Auto: ${status.charge_control?.enabled?'enabled':'disabled'}`;renderSettings(cfg)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg]=await Promise.all([request('status'),request('config')]);renderInfo(status)renderSettings(cfg)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
