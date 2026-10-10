@@ -4,7 +4,7 @@
 
 Proxmox Power Manager is an open-source-oriented prototype for running Proxmox VE on a battery-powered laptop or another machine exposing Linux battery and AC power status. It monitors power, gracefully stops running LXC containers and QEMU virtual machines, suspends the host with an RTC alarm, and restores the previously running guests after AC power returns. An optional lightweight web dashboard runs in a separate Debian LXC container.
 
-**Current version:** v0.5.2 (documentation update to the v0.5 HTTPS API implementation). No one-command remote installer or GitHub repository URL is provided by this archive.
+**Current development:** v0.6 installer work in `feature/installer-v0.6` (not released). The power-management core remains experimental.
 
 ## How it works
 
@@ -54,7 +54,8 @@ This is the intended control flow implemented in the current code; it is **not a
 | Google/Authentik/other OIDC | **Configuration placeholder only; not functional** |
 | HTTPS host API + token + certificate verification | Implemented |
 | New/existing Debian LXC installation | Interactive installer; not validated on real Proxmox |
-| Fully automatic one-command GitHub installer | **Not implemented** |
+| GitHub one-command bootstrap | Implemented in v0.6 development branch; not integration tested |
+| Automatic LXC defaults / Debian template download | Implemented in v0.6 development branch; not integration tested |
 | Automatic firewall configuration | **Not implemented** |
 | Certificate rotation / renewal | **Not implemented** |
 | Fully automatic rollback / web upgrade | **Not implemented** |
@@ -67,9 +68,22 @@ This is the intended control flow implemented in the current code; it is **not a
 - For a **new** web LXC: a Debian 12/13 standard template already downloaded to Proxmox template storage; free CTID; appropriate storage and bridge; DHCP connectivity.
 - `openssl` on the Proxmox host for HTTPS API certificate generation.
 
-> The installer is interactive and **does not automatically download templates, select CTIDs, configure a firewall or set up HTTPS for the browser**. Review each prompt before proceeding. Back up the host and any existing container first.
+> The v0.6 installer can download a Debian template and suggest CTID/storage/bridge defaults for a new LXC. It **does not configure a firewall or set up HTTPS for the browser**. Review every prompt before proceeding. Back up the host and any existing container first.
 
 ## Installation
+
+### One-command bootstrap (development branch, test systems only)
+
+Run on the Proxmox host as root **after reviewing** [`install.sh`](install.sh). This is an experimental installer that downloads and executes code with root privileges. It is not yet a signed or checksum-pinned release.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/op1993/Proxmox-Power-Manager/feature/installer-v0.6/install.sh -o /root/ppm-bootstrap.sh
+PPM_REF=feature/installer-v0.6 bash /root/ppm-bootstrap.sh
+```
+
+The bootstrap downloads the selected branch and invokes `scripts/install.sh`. Choose `2` for a new LXC, then choose automatic defaults (`1`) or advanced (`2`). The installer will ask for confirmation before creating a container. For public stable installation, wait for a tagged, verified release.
+
+### Manual installation
 
 Download or clone the project to a trusted location on the **Proxmox host**. From the project directory, run as root:
 
@@ -81,7 +95,7 @@ bash scripts/install.sh
 The installer offers:
 
 1. **Agent only:** installs the host agent and systemd service, without the API or web dashboard.
-2. **Agent + new LXC:** asks for the host's LAN IPv4 address, an unused CTID, Debian template volume, storage and bridge; creates an unprivileged Debian LXC (1 core, 256 MiB RAM, 256 MiB swap, 4 GiB root disk, DHCP), then installs the dashboard.
+2. **Agent + new LXC:** offers automatic defaults (unused CTID, active storage, vmbr0, cached/downloaded Debian template) or advanced settings (CTID, storage, bridge, cores, RAM, disk); creates an unprivileged Debian LXC (default 1 core, 256 MiB RAM, 256 MiB swap, 4 GiB root disk, DHCP), then installs the dashboard.
 3. **Agent + existing Debian LXC:** asks for the host's LAN IPv4 address and a running Debian CTID, then installs the dashboard into it. **This modifies the existing container**; back it up first.
 
 The agent's initial config is copied from `config/config.example.json` only if no installed config already exists. The installer enables/restarts the host service; for web modes it also provisions the HTTPS API and web service. It does **not** turn on automatic suspend.
@@ -96,7 +110,7 @@ pveam available --section system | grep -E 'debian-(12|13)'
 # pveam download local <template-filename>
 ```
 
-The template prompt expects a volume ID such as `local:vztmpl/debian-13-standard_...tar.zst`, **not** merely the filename.
+The v0.6 installer selects a cached Debian 12/13 template, or downloads one if none is cached. The selected template storage must support `vztmpl` content.
 
 After successful installation, find the container's IP:
 
@@ -106,7 +120,7 @@ pct exec <CTID> -- hostname -I
 
 Open `http://<LXC-IP>:8080` **from your trusted LAN only**. The first web installation generates a random password for username `admin` and prints it **once** in the installer output. Save it in a password manager. On reinstall, existing credentials are preserved.
 
-**Important:** there is currently no supported published `curl | bash` URL. Do not run an example command pointing at an unverified GitHub repository.
+**Important:** the development-branch bootstrap above is not a production-ready, pinned release. Do not enable unattended suspend before completing real hardware tests.
 
 ## Configuration
 
@@ -213,7 +227,7 @@ The uninstall script asks for confirmation, stops/disables the host agent and AP
 - New/existing LXC installation has no transactional rollback; partial failure may leave installed services or a partially configured container.
 - The dashboard itself is shut down with other LXC guests during suspend and will be unreachable while asleep.
 - Port 8080 is HTTP-only and port 8765 is a privileged host API. Network restrictions are the operator's responsibility.
-- Certificates expire after 365 days. There is no automatic renewal, firewall setup, remote one-liner installer, full web upgrade, or comprehensive audit log yet.
+- Certificates expire after 365 days. There is no automatic renewal, firewall setup, full web upgrade, or comprehensive audit log yet. The v0.6 remote bootstrap is experimental and lacks signed release verification.
 - Do not publish runtime configs, tokens, `auth.json`, `.env` files, TLS keys or backups. `.gitignore` reduces accidental commits but does not remove already-tracked secrets.
 
 ## Development
