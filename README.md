@@ -252,3 +252,11 @@ tests/              Python unit tests
 .gitignore          Excludes local secrets and generated files
 README.md           This documentation
 ```
+
+## v0.6 development notes
+
+The host agent deliberately owns suspend, RTC wake, guest shutdown and recovery. The LXC is the web control plane only. This prevents the control-plane container from stopping itself in the middle of host power management.
+
+The installer verifies that the LXC can authenticate to the host HTTPS API, but it **does not automatically configure Proxmox firewall rules**. Restrict port 8765 to the web container. New installations keep `enabled=false`; do not enable unattended suspend until AC-loss, RTC wake and recovery are tested on the target hardware.
+
+`scripts/update.sh` updates the host agent only. It backs up host agent files and systemd units, and attempts to roll back on an update error. Web UI upgrades, full transactional rollback and cold-boot guest gating are not implemented yet. In particular, normal Proxmox `onboot` guests may start after a cold boot regardless of battery state; do not rely on this project to prevent that until cold-boot gating has been designed and tested.
