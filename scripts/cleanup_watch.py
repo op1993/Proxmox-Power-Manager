@@ -30,6 +30,22 @@ def cluster_healthy():
         return False
 
 
+def container_registered_in_cluster(ctid):
+    """Fail closed when cluster inventory cannot be queried."""
+    result = subprocess.run(
+        ['pvesh', 'get', '/cluster/resources', '--type', 'vm',
+         '--output-format', 'json'],
+        capture_output=True, text=True, timeout=15, check=True,
+    )
+    resources = json.loads(result.stdout)
+    if not isinstance(resources, list):
+        raise ValueError('Invalid cluster resource response')
+    return any(
+        item.get('type') == 'lxc' and item.get('vmid') == ctid
+        for item in resources if isinstance(item, dict)
+    )
+
+
 def reset_confirmation():
     COUNTER.unlink(missing_ok=True)
     READY.unlink(missing_ok=True)
@@ -53,6 +69,14 @@ def inspect():
     if (LXC_CONFIG_DIR / f'{ctid}.conf').is_file():
         reset_confirmation()
         return 'present'
+    # A container moved to another node must never be treated as deleted.
+    try:
+        if container_registered_in_cluster(ctid):
+            reset_confirmation()
+            return 'present-on-another-node'
+    except (OSError, ValueError, subprocess.SubprocessError):
+        reset_confirmation()
+        return 'cluster-inventory-unavailable'
     # Only mark a possible deletion. A separate explicit cleanup step is needed.
     COUNTER.parent.mkdir(parents=True, exist_ok=True)
     try:
