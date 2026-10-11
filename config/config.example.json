@@ -13,6 +13,5 @@
   "critical_action": "poweroff",
   "minimum_restore_percent": 15,
   "hdd_spindown_enabled": false,
-  "hdd_device": "",
-  "hdd_mountpoint": "/mnt/storage"
+  "hdd_disks": []
 }
