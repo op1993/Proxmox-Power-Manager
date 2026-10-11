@@ -18,12 +18,10 @@ def report(cfg):
     try: mode=int(p.read_text().strip()) if p else None
     except (OSError,ValueError): mode=None
     return {'supported':p is not None,'enabled':cfg.get('charge_control_enabled',False),
-            'mode':mode,'lower':cfg.get('charge_lower_percent',70),
-            'upper':cfg.get('charge_upper_percent',80),
+            'mode':mode,'upper':cfg.get('charge_upper_percent',80),
             'note':'Conservation Mode uses firmware-defined limits; upper threshold is not guaranteed.'}
 
 def tick(cfg):
-    if not cfg.get('charge_control_enabled',False): return
     p=device()
     if p is None:
         LOG.warning('Charge control unsupported: conservation_mode not found')
@@ -34,7 +32,9 @@ def tick(cfg):
         percent=int(Path(cfg['battery_path']).read_text().strip())
         current=int(p.read_text().strip())
         if current not in (0,1) or not 0<=percent<=100: return
-        target=1 if percent>=cfg['charge_upper_percent'] else 0 if percent<=cfg['charge_lower_percent'] else current
+        # Single upper limit: below target charge normally; at/above target hold.
+        # When automation is disabled, restore Standard on AC.
+        target=(1 if percent>=cfg['charge_upper_percent'] else 0) if cfg.get('charge_control_enabled',False) else 0
         if target!=current:
             p.write_text(str(target)+'\n')
             LOG.info('Conservation mode changed to %s at %s%%',target,percent)
