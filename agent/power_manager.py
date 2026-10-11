@@ -15,7 +15,7 @@ STATE = Path('/var/lib/proxmox-power-manager/state.json')
 LOCK = Path('/run/proxmox-power-manager.lock')
 DEFAULTS = dict(enabled=False, sleep_threshold=30, low_threshold=15,
                 critical_threshold=8, normal_wake_minutes=15, low_wake_minutes=60,
-                check_seconds=60, shutdown_timeout=120,
+                check_seconds=60, shutdown_timeout=120, force_stop_mode='never',
                 ac_path='/sys/class/power_supply/ADP0/online',
                 battery_path='/sys/class/power_supply/BAT0/capacity',
                 manage_vms=True, critical_action='poweroff',
@@ -58,6 +58,7 @@ def validate(cfg):
     if not 10 <= cfg['check_seconds'] <= 3600: raise ValueError('Invalid check_seconds')
     if not 30 <= cfg['shutdown_timeout'] <= 3600: raise ValueError('Invalid shutdown_timeout')
     if not 0 <= cfg['minimum_restore_percent'] <= 100: raise ValueError('Invalid minimum_restore_percent')
+    if cfg['force_stop_mode'] not in ('never','low','sleep'): raise ValueError('Invalid force_stop_mode')
     if cfg['critical_action'] not in ('poweroff','warn'): raise ValueError('Invalid critical_action')
     return cfg
 
@@ -102,7 +103,7 @@ def state():
 def ac_online(cfg): return read_int(cfg['ac_path']) == 1
 
 
-def stop_guests(cfg):
+def stop_guests(cfg, force=False):
     saved = state()
     if saved is None:
         saved = dict(containers=running_cts(), vms=running_vms() if cfg['manage_vms'] else [],
@@ -116,8 +117,13 @@ def stop_guests(cfg):
             except (OSError,subprocess.SubprocessError) as e:
                 log.error('LXC %s shutdown failed: %s',ct,e)
         if ct_running(ct):
-            log.error('LXC %s remains running; suspend aborted',ct)
-            return False
+            if not force or ac_online(cfg):
+                log.error('LXC %s remains running; suspend aborted',ct)
+                return False
+            log.critical('Force stopping LXC %s after graceful timeout',ct)
+            try: run('pct','stop',str(ct),'--timeout','30',timeout=45)
+            except (OSError,subprocess.SubprocessError) as e: log.error('LXC %s force stop failed: %s',ct,e)
+            if ct_running(ct): return False
     for vm in saved['vms']:
         if vm_running(vm):
             log.info('Gracefully shutting down VM %s',vm)
@@ -126,8 +132,13 @@ def stop_guests(cfg):
             except (OSError,subprocess.SubprocessError) as e:
                 log.error('VM %s shutdown failed: %s',vm,e)
         if vm_running(vm):
-            log.error('VM %s remains running; suspend aborted',vm)
-            return False
+            if not force or ac_online(cfg):
+                log.error('VM %s remains running; suspend aborted',vm)
+                return False
+            log.critical('Force stopping VM %s after graceful timeout',vm)
+            try: run('qm','stop',str(vm),'--timeout','30',timeout=45)
+            except (OSError,subprocess.SubprocessError) as e: log.error('VM %s force stop failed: %s',vm,e)
+            if vm_running(vm): return False
     # Never suspend with unexpected running guests, including untracked VMs.
     if running_cts() or running_vms():
         log.error('Unstopped guests remain: CT=%s VM=%s',running_cts(),running_vms())
@@ -203,7 +214,10 @@ def cycle(cfg, dry_run=False):
     minutes = cfg['low_wake_minutes'] if st['battery_percent'] <= cfg['low_threshold'] else cfg['normal_wake_minutes']
     if dry_run or not cfg['enabled']:
         log.info('Would stop guests and suspend for %s minutes',minutes); return
-    if not stop_guests(cfg): return
+    force_mode = cfg['force_stop_mode']
+    allow_force = (force_mode == 'sleep' or
+                   (force_mode == 'low' and read_int(cfg['battery_path']) <= cfg['low_threshold']))
+    if not stop_guests(cfg, force=allow_force): return
     if ac_online(cfg):
         log.info('AC returned before suspend'); restore_guests(cfg); return
     if read_int(cfg['battery_path']) <= cfg['critical_threshold']:
