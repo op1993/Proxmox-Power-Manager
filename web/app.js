@@ -1,7 +1,7 @@
 let csrf='';
-const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['force_stop_sleep','Принудительно останавливать гостей после тайм-аута','bool'],['force_stop_low','Принудительно останавливать гостей после тайм-аута','bool'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str'],['hdd_spindown_enabled','Останавливать HDD после остановки гостей','bool'],['hdd_device','Путь к HDD (/dev/disk/by-id/...)','str']];
+const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['force_stop_sleep','Принудительно останавливать гостей после тайм-аута','bool'],['force_stop_low','Принудительно останавливать гостей после тайм-аута','bool'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str'],['hdd_spindown_enabled','Останавливать HDD после остановки гостей','bool']];
 const settingsGroups=[
-  {title:'Жёсткий диск',description:'Остановка HDD после остановки гостей и размонтирования /mnt/storage. Укажи стабильный путь к диску.',keys:['hdd_device','hdd_spindown_enabled']},
+  {title:'Жёсткий диск',description:'Остановка HDD после остановки гостей и размонтирования /mnt/storage. Выбери один или несколько обнаруженных дисков.',keys:['hdd_spindown_enabled']},
   {title:'Управление зарядом аккумулятора',description:'Lenovo Conservation Mode и пороги управления зарядом.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
   {title:'Управление отключением/включением сервера',description:'Настройки автоматического сна и восстановления гостей.',toggle:'enabled',sections:[
     {title:'Экономный режим',description:'Когда переходить в сон и через сколько минут просыпаться.',keys:['sleep_threshold','normal_wake_minutes','force_stop_sleep']},
@@ -11,7 +11,10 @@ const settingsGroups=[
     {title:'Аварийная защита',description:'Отдельный критический порог и действие при почти разряженной батарее.',keys:['critical_threshold','critical_action']}
   ]}
 ];
+let discoveredHdds=[];
+let selectedHdds=[];
 function renderSettings(cfg){
+  selectedHdds=(cfg.hdd_disks||[]).map(x=>({...x}));
   const root=el('settings');root.replaceChildren();
   const definitions=new Map(fields.map(field=>[field[0],field]));
   function addFields(container,keys){
@@ -52,6 +55,16 @@ function renderSettings(cfg){
       toggle.addEventListener('change',sync);sync();details.append(body);
     }else addFields(details,group.keys);
     if(group.title==='Жёсткий диск'){
+      const list=document.createElement('div');
+      for(const disk of discoveredHdds){
+        const line=document.createElement('label');
+        const check=document.createElement('input');check.type='checkbox';
+        check.checked=selectedHdds.some(x=>x.device===disk.device&&x.mountpoint===disk.mountpoint);
+        check.onchange=()=>{selectedHdds=selectedHdds.filter(x=>!(x.device===disk.device&&x.mountpoint===disk.mountpoint));if(check.checked)selectedHdds.push({device:disk.device,mountpoint:disk.mountpoint})};
+        line.append(check,document.createTextNode(' '+(disk.model||disk.device)+' · '+(disk.size?Math.round(disk.size/1e9)+' GB · ':'')+disk.mountpoint));list.append(line);
+      }
+      if(!discoveredHdds.length)list.textContent='Подходящие HDD не обнаружены';
+      details.append(list);
       const btn=document.createElement('button');btn.type='button';btn.textContent='Принудительно запустить HDD и смонтировать';
       btn.onclick=async()=>{btn.disabled=true;try{await request('hdd/start',{});el('message').textContent='HDD запущен и смонтирован';await refresh()}catch(e){el('message').textContent='Ошибка запуска HDD: '+e.message}finally{btn.disabled=false}};
       details.append(btn);
@@ -167,10 +180,10 @@ for(const [i,name] of tabs.entries()){
 }
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message}))]);renderInfo(status);renderSettings(cfg);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]}))]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
-el('save').onclick=()=>busy('save',async()=>{const payload={};for(const [key,,type] of fields){const inp=el('cfg-'+key);if(!inp){el('message').textContent='Сначала войдите';return}payload[key]=type==='bool'?inp.checked:(type==='str'||type==='choice')?inp.value:Number(inp.value)}try{await request('config',payload);el('message').textContent='Настройки сохранены';await refresh()}catch(e){el('message').textContent=e.message}});
+el('save').onclick=()=>busy('save',async()=>{const payload={};for(const [key,,type] of fields){const inp=el('cfg-'+key);if(!inp){el('message').textContent='Сначала войдите';return}payload[key]=type==='bool'?inp.checked:(type==='str'||type==='choice')?inp.value:Number(inp.value)}payload.hdd_disks=selectedHdds;try{await request('config',payload);el('message').textContent='Настройки сохранены';await refresh()}catch(e){el('message').textContent=e.message}});
 
 checkSession();
