@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 import ssl
+from urllib.error import HTTPError
 from auth import load_auth, sign_session, verify_password, verify_session
 
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -93,6 +94,12 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/config':
                 return self.send_json(200, call('config'))
             return self.send_json(404, {'error': 'Not found'})
+        except HTTPError as exc:
+            try:
+                message = json.loads(exc.read().decode('utf-8')).get('error', 'Agent rejected request')
+            except (ValueError, UnicodeDecodeError):
+                message = 'Agent rejected request'
+            return self.send_json(exc.code if 400 <= exc.code < 500 else 502, {'error': message if exc.code < 500 else 'Agent unavailable'})
         except Exception:
             return self.send_json(502, {'error': 'Agent unavailable'})
 
