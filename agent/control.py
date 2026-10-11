@@ -7,7 +7,7 @@ STATE = pathlib.Path('/var/lib/proxmox-power-manager/state.json')
 LOCK = pathlib.Path('/run/proxmox-power-manager-config.lock')
 FIELDS = {'enabled': bool, 'sleep_threshold': int, 'low_threshold': int, 'critical_threshold': int,
           'normal_wake_minutes': int, 'low_wake_minutes': int, 'check_seconds': int, 'shutdown_timeout': int,
-          'manage_vms': bool, 'charge_control_enabled': bool,
+          'manage_vms': bool, 'charge_control_enabled': bool, 'force_stop_mode': str,
           'charge_lower_percent': int, 'charge_upper_percent': int, 'critical_action': str, 'minimum_restore_percent': int}
 
 def output(data):
@@ -31,6 +31,7 @@ def validate(old, changes):
     for key in ('normal_wake_minutes','low_wake_minutes','check_seconds','shutdown_timeout'):
         if not (1 <= new[key] <= (1440 if 'minutes' in key else 3600)):
             raise ValueError(f'Out of range: {key}')
+    if new.get('force_stop_mode','never') not in ('never','low','sleep'): raise ValueError('Invalid force stop mode')
     if new.get('critical_action','poweroff') not in ('poweroff','warn'): raise ValueError('Invalid critical action')
     if not 0 <= new.get('minimum_restore_percent',0) <= 100: raise ValueError('Invalid restore threshold')
     return new
