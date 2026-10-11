@@ -9,11 +9,12 @@ import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 from urllib.request import Request, urlopen
 import ssl
 from urllib.error import HTTPError
-from auth import load_auth, sign_session, verify_password, verify_session
+from auth import load_auth, save_auth, sign_session, verify_password, verify_session
+import oidc
 
 ROOT = pathlib.Path(__file__).resolve().parent
 API_URL = os.environ.get('PPM_API_URL', 'https://127.0.0.1:8765')
@@ -23,6 +24,9 @@ PORT = int(os.environ.get('PPM_PORT', '8080'))
 SECURE_COOKIE = os.environ.get('PPM_HTTPS', '0') == '1'
 ATTEMPTS = defaultdict(list)
 ATTEMPT_LOCK = threading.Lock()
+# Temporary OIDC proof is bound to the current authenticated session.
+OIDC_PROOFS = {}
+PROOF_LOCK = threading.Lock()
 
 def call(command, payload=None):
     routes = {'status': ('GET', '/v1/status'), 'config': ('GET', '/v1/config'),
@@ -51,6 +55,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def cookie(self, name):
+        try:
+            cookies=http.cookies.SimpleCookie();cookies.load(self.headers.get('Cookie',''))
+            return cookies[name].value
+        except (KeyError, ValueError): return None
+
+    def origin(self):
+        # Fixed, operator-configured public origin prevents Host header injection.
+        return os.environ.get('PPM_PUBLIC_URL','').rstrip('/')
+
+    def redirect(self, location, cookies=()):
+        self.send_response(302)
+        self.send_header('Location',location)
+        self.send_header('Cache-Control','no-store')
+        for cookie in cookies: self.send_header('Set-Cookie',cookie)
+        self.end_headers()
+
     def session_nonce(self):
         try:
             cookies = http.cookies.SimpleCookie()
@@ -68,6 +89,40 @@ class Handler(BaseHTTPRequestHandler):
         return parsed.scheme in ('http', 'https') and parsed.netloc == self.headers.get('Host') and parsed.path == ''
 
     def do_GET(self):
+        if self.path == '/auth/oidc/start':
+            config=load_auth(); settings=config.get('oidc',{})
+            origin=self.origin()
+            if not settings.get('enabled') or not origin.startswith('https://'):
+                return self.send_json(400,{'error':'OIDC not configured for HTTPS'})
+            try:
+                url,pending=oidc.start({**settings,'session_secret':config['session_secret']},origin)
+                cookie='ppm_oidc_pending='+pending+'; HttpOnly; Secure; SameSite=Lax; Path=/auth/oidc; Max-Age=300'
+                return self.redirect(url,[cookie])
+            except Exception:
+                return self.send_json(502,{'error':'OIDC provider unavailable'})
+        if self.path.startswith('/auth/oidc/callback?'):
+            config=load_auth();settings=config.get('oidc',{})
+            origin=self.origin()
+            try:
+                args=parse_qs(urlsplit(self.path).query)
+                code=args['code'][0];state=args['state'][0]
+                if len(code)>4096 or len(state)>256 or not settings.get('enabled'): raise ValueError('Invalid callback')
+                pending=self.cookie('ppm_oidc_pending')
+                if not pending: raise ValueError('Missing OIDC state')
+                claims=oidc.callback({**settings,'session_secret':config['session_secret']},origin,code,state,pending)
+                subject=claims['sub']
+                allowed=settings.get('allowed_subjects',[])
+                if allowed and subject not in allowed: raise ValueError('User not allowed')
+                session,nonce=sign_session(config,'oidc')
+                with PROOF_LOCK:
+                    OIDC_PROOFS[nonce]=time.time()+300
+                    for k,v in list(OIDC_PROOFS.items()):
+                        if v<time.time(): OIDC_PROOFS.pop(k,None)
+                cookies=['ppm_oidc_pending=; HttpOnly; Secure; SameSite=Lax; Path=/auth/oidc; Max-Age=0',
+                    'ppm_session='+session+'; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800']
+                return self.redirect('/',cookies)
+            except Exception:
+                return self.send_json(403,{'error':'OIDC authentication failed'})
         if self.path in ('/', '/app.js'):
             filename = 'index.html' if self.path == '/' else 'app.js'
             data = (ROOT / filename).read_bytes()
@@ -81,7 +136,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         nonce = self.session_nonce()
         if self.path == '/api/session':
-            return self.send_json(200, {'authenticated': bool(nonce), 'csrf': nonce if nonce else None})
+            cfg=load_auth()
+            return self.send_json(200, {'authenticated': bool(nonce), 'csrf': nonce if nonce else None,
+                'oidc_enabled':bool(cfg.get('oidc',{}).get('enabled')),
+                'local_login_enabled':cfg.get('local_login_enabled',True)})
         if not nonce:
             return self.send_json(401, {'error': 'Authentication required'})
         try:
@@ -93,6 +151,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, call('hdd-list'))
             if self.path == '/api/config':
                 return self.send_json(200, call('config'))
+            if self.path == '/api/auth/config':
+                cfg=load_auth();settings=cfg.get('oidc',{})
+                return self.send_json(200,{'local_login_enabled':cfg.get('local_login_enabled',True),
+                    'oidc':{k:settings.get(k) for k in ('enabled','issuer_url','client_id','allowed_subjects')},
+                    'client_secret_configured':bool(settings.get('client_secret')),
+                    'public_url':self.origin(), 'redirect_uri':self.origin()+'/auth/oidc/callback' if self.origin() else ''})
             return self.send_json(404, {'error': 'Not found'})
         except HTTPError as exc:
             try:
@@ -125,6 +189,8 @@ class Handler(BaseHTTPRequestHandler):
                 ATTEMPTS[ip] = recent
             try:
                 config = load_auth()
+                if not config.get('local_login_enabled',True):
+                    return self.send_json(403,{'error':'Local login disabled'})
                 user = payload.get('username', '')
                 password = payload.get('password', '')
                 if not isinstance(user, str) or not isinstance(password, str):
@@ -152,6 +218,30 @@ class Handler(BaseHTTPRequestHandler):
                 cookie += '; Secure'
             return self.send_json(200, {'ok': True}, cookie)
         try:
+            if self.path == '/api/auth/config':
+                if set(payload)-{'oidc','local_login_enabled'}: raise ValueError('Unsupported auth setting')
+                cfg=load_auth(); current=dict(cfg.get('oidc',{})); supplied=payload.get('oidc',{})
+                if not isinstance(supplied,dict) or set(supplied)-{'enabled','issuer_url','client_id','client_secret','allowed_subjects'}: raise ValueError('Invalid OIDC settings')
+                for key in ('enabled','issuer_url','client_id','client_secret','allowed_subjects'):
+                    if key in supplied: current[key]=supplied[key]
+                if type(current.get('enabled',False)) is not bool: raise ValueError('Invalid OIDC enabled')
+                if current.get('enabled'):
+                    if not self.origin().startswith('https://'): raise ValueError('Configure HTTPS PPM_PUBLIC_URL first')
+                    if not current.get('client_id') or not current.get('client_secret'): raise ValueError('Client ID and secret required')
+                    oidc.discovery(current)
+                if type(current.get('allowed_subjects',[])) is not list or any(not isinstance(x,str) or not x for x in current.get('allowed_subjects',[])): raise ValueError('Invalid subjects')
+                disable=payload.get('local_login_enabled',cfg.get('local_login_enabled',True)) is False
+                if 'local_login_enabled' in payload and type(payload['local_login_enabled']) is not bool: raise ValueError('Invalid local login option')
+                if disable:
+                    if not current.get('enabled'): raise ValueError('OIDC must remain enabled')
+                    with PROOF_LOCK:
+                        expiry=OIDC_PROOFS.pop(nonce,0)
+                    if expiry<time.time(): raise ValueError('Complete a fresh OIDC login before disabling local access')
+                    # Proof is only issued to OIDC sessions, and must be consumed once.
+                    if '.oidc.' not in (self.cookie('ppm_session') or ''): raise ValueError('OIDC session required')
+                cfg['oidc']=current;cfg['local_login_enabled']=not disable
+                save_auth(cfg)
+                return self.send_json(200,{'ok':True})
             if self.path == '/api/config':
                 return self.send_json(200, call('update', payload))
             if self.path == '/api/hdd/start':
@@ -159,6 +249,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/dry-run':
                 return self.send_json(200, call('dry-run', payload))
             return self.send_json(404, {'error': 'Not found'})
+        except ValueError as exc:
+            return self.send_json(400,{'error':str(exc)})
         except Exception:
             return self.send_json(502, {'error': 'Agent unavailable'})
 
