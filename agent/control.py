@@ -8,7 +8,7 @@ LOCK = pathlib.Path('/run/proxmox-power-manager-config.lock')
 FIELDS = {'enabled': bool, 'sleep_threshold': int, 'low_threshold': int, 'critical_threshold': int,
           'normal_wake_minutes': int, 'low_wake_minutes': int, 'check_seconds': int, 'shutdown_timeout': int,
           'manage_vms': bool, 'charge_control_enabled': bool, 'force_stop_sleep': bool, 'force_stop_low': bool,
-          'charge_lower_percent': int, 'charge_upper_percent': int,
+          'charge_upper_percent': int,
           'hdd_spindown_enabled': bool, 'hdd_disks': list, 'critical_action': str, 'minimum_restore_percent': int}
 
 def output(data):
@@ -25,8 +25,8 @@ def validate(old, changes):
         typ = FIELDS[key]
         if type(val) is not typ: raise ValueError(f'Invalid type: {key}')
         new[key] = val
-    if not (0 <= new.get('charge_lower_percent',70) < new.get('charge_upper_percent',80) <= 100):
-        raise ValueError('Invalid charge thresholds')
+    if not 1 <= new.get('charge_upper_percent',80) <= 100:
+        raise ValueError('Invalid charge upper threshold')
     if not (0 < new['critical_threshold'] < new['low_threshold'] < new['sleep_threshold'] <= 100):
         raise ValueError('Thresholds must satisfy critical < low < sleep <= 100')
     for key in ('normal_wake_minutes','low_wake_minutes','check_seconds','shutdown_timeout'):
