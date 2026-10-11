@@ -111,6 +111,27 @@ function renderHistory(data){
     item.append(time,title,reason);root.append(item);
   }
 }
+const tabs=['overview','history','settings','simulator'];
+function selectTab(name,focus=false){
+  if(!tabs.includes(name))return;
+  for(const tab of tabs){
+    const active=tab===name;
+    const button=el('tab-'+tab);
+    button.setAttribute('aria-selected',String(active));
+    button.tabIndex=active?0:-1;
+    el('panel-'+tab).hidden=!active;
+  }
+  if(focus)el('tab-'+name).focus();
+}
+for(const [i,name] of tabs.entries()){
+  el('tab-'+name).addEventListener('click',()=>selectTab(name));
+  el('tab-'+name).addEventListener('keydown',event=>{
+    const next=event.key==='ArrowRight'?tabs[(i+1)%tabs.length]:
+      event.key==='ArrowLeft'?tabs[(i+tabs.length-1)%tabs.length]:
+      event.key==='Home'?tabs[0]:event.key==='End'?tabs[tabs.length-1]:null;
+    if(next){event.preventDefault();selectTab(next,true)}
+  });
+}
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
 async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message}))]);renderInfo(status);renderSettings(cfg);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
