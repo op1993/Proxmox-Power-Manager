@@ -239,7 +239,9 @@ class Handler(BaseHTTPRequestHandler):
                     if expiry<time.time(): raise ValueError('Complete a fresh OIDC login before disabling local access')
                     # Proof is only issued to OIDC sessions, and must be consumed once.
                     if '.oidc.' not in (self.cookie('ppm_session') or ''): raise ValueError('OIDC session required')
-                cfg['oidc']=current;cfg['local_login_enabled']=not disable
+                if not current.get('enabled') and not payload.get('local_login_enabled',cfg.get('local_login_enabled',True)):
+                    raise ValueError('Cannot disable both login methods')
+                cfg['oidc']=current;cfg['local_login_enabled']=payload.get('local_login_enabled',cfg.get('local_login_enabled',True))
                 save_auth(cfg)
                 return self.send_json(200,{'ok':True})
             if self.path == '/api/config':
