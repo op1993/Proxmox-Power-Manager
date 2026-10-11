@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import shutil
 
 CONFIG = Path('/etc/proxmox-power-manager/config.json')
 STATE = Path('/var/lib/proxmox-power-manager/state.json')
@@ -20,7 +21,8 @@ DEFAULTS = dict(enabled=False, sleep_threshold=30, low_threshold=15,
                 battery_path='/sys/class/power_supply/BAT0/capacity',
                 manage_vms=True, critical_action='poweroff',
                 minimum_restore_percent=0, charge_control_enabled=False,
-                charge_lower_percent=70, charge_upper_percent=80)
+                charge_lower_percent=70, charge_upper_percent=80,
+                hdd_spindown_enabled=False, hdd_device='', hdd_mountpoint='/mnt/storage')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', stream=sys.stdout)
 log = logging.getLogger('ppm')
 
@@ -60,6 +62,10 @@ def validate(cfg):
     if not 0 <= cfg['minimum_restore_percent'] <= 100: raise ValueError('Invalid minimum_restore_percent')
     for key in ('force_stop_sleep','force_stop_low'):
         if type(cfg[key]) is not bool: raise ValueError(f'{key} must be boolean')
+    if type(cfg['hdd_spindown_enabled']) is not bool: raise ValueError('hdd_spindown_enabled must be boolean')
+    if not isinstance(cfg['hdd_device'], str) or (cfg['hdd_device'] and not cfg['hdd_device'].startswith('/dev/disk/by-id/')): raise ValueError('Use /dev/disk/by-id/... for HDD')
+    if not isinstance(cfg['hdd_mountpoint'], str) or cfg['hdd_mountpoint'] != '/mnt/storage': raise ValueError('Only /mnt/storage is supported')
+    if cfg['hdd_spindown_enabled'] and not cfg['hdd_device']: raise ValueError('Set HDD device before enabling spindown')
     if cfg['critical_action'] not in ('poweroff','warn'): raise ValueError('Invalid critical_action')
     return cfg
 
@@ -147,6 +153,54 @@ def stop_guests(cfg, force=False):
     return True
 
 
+
+def hdd_ready(cfg):
+    """Only the explicitly configured stable disk path may be controlled."""
+    device = cfg['hdd_device']
+    if not device or not device.startswith('/dev/disk/by-id/'):
+        raise ValueError('Configure a /dev/disk/by-id/... HDD path')
+    if not Path(device).exists() or not Path(device).resolve().is_block_device():
+        raise RuntimeError('Configured HDD not found')
+    if not shutil.which('sg_start'):
+        raise RuntimeError('sg_start is not installed (install sg3-utils)')
+    return device
+
+
+def hdd_mount_source():
+    proc = run('findmnt', '-n', '-o', 'SOURCE', '--target', '/mnt/storage', check=False)
+    if proc.returncode:
+        return None
+    # findmnt --target may return the parent filesystem; require an exact mountpoint.
+    exact = run('findmnt', '-n', '-o', 'SOURCE', '--mountpoint', '/mnt/storage', check=False)
+    return exact.stdout.strip() if exact.returncode == 0 else None
+
+
+def hdd_start(cfg):
+    device = hdd_ready(cfg)
+    run('sg_start', '--readonly', '--start', device, timeout=45)
+    if hdd_mount_source() is None:
+        run('mount', cfg['hdd_mountpoint'], timeout=45)
+    source = hdd_mount_source()
+    if source is None or os.path.realpath(source) != os.path.realpath(device + '1') and os.path.realpath(source) != os.path.realpath(device):
+        raise RuntimeError('HDD mount source does not match configured device')
+    return {'ok': True, 'mounted': True}
+
+
+def hdd_stop(cfg):
+    device = hdd_ready(cfg)
+    source = hdd_mount_source()
+    if source is None:
+        raise RuntimeError('HDD mountpoint is not mounted; refusing automatic stop')
+    if os.path.realpath(source) not in (os.path.realpath(device), os.path.realpath(device + '1')):
+        raise RuntimeError('HDD mount source does not match configured device')
+    run('sync', timeout=60)
+    run('umount', cfg['hdd_mountpoint'], timeout=60)
+    if hdd_mount_source() is not None:
+        raise RuntimeError('HDD still mounted')
+    run('sg_start', '--readonly', '--stop', device, timeout=45)
+    return {'ok': True, 'mounted': False}
+
+
 def restore_guests(cfg):
     saved = state()
     if saved is None: return
@@ -154,6 +208,11 @@ def restore_guests(cfg):
     if read_int(cfg['battery_path']) < cfg['minimum_restore_percent']:
         log.info('AC available; waiting for minimum battery charge before restore')
         return
+    if cfg['hdd_spindown_enabled']:
+        try: hdd_start(cfg)
+        except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as exc:
+            log.error('HDD restore failed; guests will not start: %s', exc)
+            return
     failed=[]
     for ct in saved['containers']:
         if not ct_running(ct):
@@ -221,6 +280,13 @@ def cycle(cfg, dry_run=False):
     if not stop_guests(cfg, force=allow_force): return
     if ac_online(cfg):
         log.info('AC returned before suspend'); restore_guests(cfg); return
+    if cfg['hdd_spindown_enabled']:
+        try: hdd_stop(cfg)
+        except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as exc:
+            log.error('HDD stop failed; suspend aborted: %s', exc)
+            return
+    if ac_online(cfg):
+        restore_guests(cfg); return
     if read_int(cfg['battery_path']) <= cfg['critical_threshold']:
         critical(cfg); return
     # Not all systems support deep sleep. Let rtcwake select the available mode.
