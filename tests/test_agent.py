@@ -12,6 +12,19 @@ ppm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ppm)
 
 class AgentTests(unittest.TestCase):
+    def test_force_stop_policy_defaults_safe(self):
+        self.assertEqual(ppm.validate({})['force_stop_mode'],'never')
+        with self.assertRaises(ValueError): ppm.validate({'force_stop_mode':'invalid'})
+
+    def test_force_stop_after_graceful_timeout(self):
+        cfg=ppm.validate({})
+        with tempfile.TemporaryDirectory() as d:
+            with patch.object(ppm,'STATE',Path(d)/'state.json'), patch.object(ppm,'running_cts',side_effect=[[101],[]]), \
+                 patch.object(ppm,'running_vms',return_value=[]), patch.object(ppm,'ct_running',side_effect=[True,True,False]), \
+                 patch.object(ppm,'ac_online',return_value=False), patch.object(ppm,'run') as runner:
+                self.assertTrue(ppm.stop_guests(cfg,force=True))
+                self.assertTrue(any(call.args[:2]==('pct','stop') for call in runner.call_args_list))
+
     def test_defaults_disabled(self):
         self.assertFalse(ppm.validate({})['enabled'])
     def test_threshold_order(self):
