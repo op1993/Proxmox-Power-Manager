@@ -6,6 +6,58 @@ Proxmox Power Manager is an open-source-oriented prototype for running Proxmox V
 
 **Current development:** v0.6 installer work in `feature/installer-v0.6` (not released). The power-management core remains experimental.
 
+## Quick start — install, update and remove
+
+> Development branch: `feature/installer-v0.6`. Run these commands as `root` **on the Proxmox VE host**, not inside an LXC. Review the remote installer before executing it.
+
+### Install with one command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/op1993/Proxmox-Power-Manager/feature/installer-v0.6/install.sh | PPM_REF=feature/installer-v0.6 bash
+```
+
+This downloads the selected branch and starts the **interactive** installer. Choose **1** for host agent only, **2** for agent + newly created Debian LXC dashboard (recommended for a dedicated PPM web container), or **3** for agent + an existing Debian LXC. For mode 2, select automatic defaults or advanced setup, review the proposed CTID/storage/network settings, and confirm creation. Keep the initial `admin` password displayed once during setup. The web dashboard is served on the LXC's port `8080` (HTTP; LAN only unless protected by an HTTPS reverse proxy). The host API uses port `8765`; restrict access to the PPM web LXC.
+
+The installer is **not unattended**: the single command starts an interactive setup. On first install automatic suspend is disabled; test RTC wake and guest recovery before enabling it.
+
+### Update with one command
+
+```bash
+ppm update
+```
+
+Run as root on the host. The installed `ppm` launcher uses `/etc/proxmox-power-manager/update-ref` (the installer sets `feature/installer-v0.6`). The updater checks tests, refuses to update when guest recovery is pending, backs up host files, updates the host agent and the running web LXC, and restarts services. **The web LXC must be running** for a web installation. Updates preserve installed configuration, credentials and recovery data.
+
+Useful checks:
+
+```bash
+ppm status
+ppm version
+systemctl status proxmox-power-manager.service
+```
+
+### Uninstall manually (no automatic removal)
+
+**Deleting the PPM web LXC from the Proxmox GUI does not uninstall PPM from the host.** The lifecycle watcher only detects a missing installer-owned container; its `cleanup-ready` marker is informational. The experimental `cleanup_plan.py` and `cleanup-policy.json` do **not** implement automatic deletion, even if `automatic_cleanup` is set to `true`. Automatic removal was intentionally left unimplemented.
+
+1. **Prepare:** connect the host to AC power; ensure all previously stopped guests have been restored and `/var/lib/proxmox-power-manager/state.json` does **not** exist. Back up any settings, credentials and logs you want to keep. Do not uninstall during a suspend/recovery cycle.
+2. **Remove host services:** download and inspect the repository's `scripts/uninstall.sh`, then run it as root. It prompts for confirmation and refuses removal while recovery state exists.
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/op1993/Proxmox-Power-Manager/feature/installer-v0.6/scripts/uninstall.sh -o /root/ppm-uninstall.sh
+   less /root/ppm-uninstall.sh
+   bash /root/ppm-uninstall.sh
+   ```
+
+   This disables the PPM host agent, API and cleanup timer, removes their systemd unit files, and removes the installed agent/cleanup code. **It deliberately preserves** the web LXC, host configuration, credentials, recovery data and logs.
+3. **Remove the web LXC if it was dedicated to PPM:** find its ID in `/etc/proxmox-power-manager/installation.json`. Verify that the CTID matches the intended container. In the Proxmox GUI, select that LXC and use **More → Remove/Destroy** after backing up any required data. This permanently deletes the container and its data; **never destroy an existing shared LXC** installed via mode 3 just to remove PPM.
+4. **Review the host firewall:** the installer may have added an inbound TCP/8765 ACCEPT rule commented `PPM Web LXC <CTID>`. Inspect **Datacenter/Node → Firewall → Rules** (or `pvesh get /nodes/$(hostname -s)/firewall/rules --output-format json`) and remove **only** the exact PPM-owned rule. Do not remove unrelated rules.
+5. **Optional final cleanup:** after confirming recovery is complete and keeping any backups you need, manually review `/etc/proxmox-power-manager/`, `/var/lib/proxmox-power-manager/`, `/opt/proxmox-power-manager/` and `/usr/local/bin/ppm` for remaining PPM-only files. The uninstall script does not delete these automatically. Do not remove shared directories or files whose ownership is uncertain.
+
+For an **agent-only** installation, skip the web LXC and firewall steps. For a **user-provided existing LXC**, remove PPM web files and its `proxmox-power-manager-web.service` within that container only after verifying it does not host other workloads; do not destroy the container itself.
+
+---
+
 ## How it works
 
 ```text
@@ -273,20 +325,7 @@ The installer verifies that the LXC can authenticate to the host HTTPS API, but 
 
 `scripts/update.sh` updates the host agent only. It backs up host agent files and systemd units, and attempts to roll back on an update error. Web UI upgrades, full transactional rollback and cold-boot guest gating are not implemented yet. In particular, normal Proxmox `onboot` guests may start after a cold boot regardless of battery state; do not rely on this project to prevent that until cold-boot gating has been designed and tested.
 
-## LXC lifecycle cleanup (work in progress)
+## LXC lifecycle cleanup status
 
-The installer now writes `/etc/proxmox-power-manager/installation.json` after creating a new managed web LXC. The file records the CTID and an ownership flag. Existing user-supplied containers are never marked as owned. The `scripts/cleanup_watch.py` observer reports `present`, `missing-unconfirmed`, `recovery-pending`, `unregistered` or `invalid-manifest` without deleting anything. **Automatic cleanup after Proxmox UI Destroy is not enabled yet.** A missing config alone is insufficient proof of deliberate deletion; the planned systemd timer must check cluster health, repeat observations and preserve recovery state before any cleanup action. Do not manually destroy the web LXC expecting host services to be removed automatically.
+Automatic uninstall after deleting the web LXC is **not implemented**. The observer (`scripts/cleanup_watch.py`) can mark confirmed absence of an installer-created container after repeated cluster checks; it does not remove host components. The read-only `scripts/cleanup_plan.py` may display eligibility, but neither it nor the `automatic_cleanup` policy performs deletion. Use the **manual uninstall** procedure in Quick start above. Do not assume that deleting the LXC disables the host power-management agent.
 
-### Confirmed LXC absence and host shutdown (experimental)
-
-The lifecycle observer now checks cluster quorum and requires three consecutive missing checks before writing `/var/lib/proxmox-power-manager/cleanup-ready`. `scripts/cleanup_host.sh` is a separate, manual, guarded action that disables the power manager host services but deliberately preserves all secrets and data. **The timer does not invoke this script yet**, and the script is not installed by the installer. This is not an automatic uninstall implementation. Do not rely on it for cleanup following a GUI Destroy operation.
-
-### Installation safety guard
-
-For newly created web containers, the installer registers `installation_complete: false` first and changes it to `true` only after the web service starts and API connectivity has been checked. The cleanup observer ignores incomplete installations, and the timer is enabled only at the end of the new-LXC installation path. If installation fails, inspect and resolve the partial installation manually; the installer does not yet roll back created containers. Automatic cleanup is still disabled and requires a separate safety review.
-
-### Managed LXC lifecycle and removal limitations
-
-In the new-container installation mode, the LXC is created first, then its CTID is recorded in the host installation manifest, and only then are host services installed. The watcher starts only after successful web installation and API verification. It requires three consecutive healthy observations of the CT being absent from both local and cluster inventory; migration and outages must not count as removal. Stale removal markers are cleared when the installation manifest is invalid or ownership is revoked.
-
-**Important:** the watcher currently creates a `cleanup-ready` marker only. It does **not** automatically disable or uninstall host services, remove secrets, or destroy containers. A guarded manual host cleanup script is provided for review, but is not wired into systemd. Do not interpret deletion of a web LXC as full uninstallation yet.
