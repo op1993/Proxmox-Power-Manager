@@ -3,7 +3,7 @@
 
 A missing CT config is not sufficient evidence of deletion. This watcher
 requires healthy pmxcfs and three observations before flagging cleanup.
-No services, containers, credentials or user data are deleted here.
+No services, containers, credentials or user data are deleted here.\nA separate read-only cleanup_plan.py provides an inventory for review.
 """
 import json
 from pathlib import Path
