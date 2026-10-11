@@ -177,11 +177,11 @@ def hdd_mount_source():
 
 def hdd_start(cfg):
     device = hdd_ready(cfg)
-    run('sg_start', '--readonly', '--start', device, timeout=45)
     if hdd_mount_source() is None:
+        run('sg_start', '--readonly', '--start', device, timeout=45)
         run('mount', cfg['hdd_mountpoint'], timeout=45)
     source = hdd_mount_source()
-    if source is None or os.path.realpath(source) != os.path.realpath(device + '1') and os.path.realpath(source) != os.path.realpath(device):
+    if source is None or os.path.realpath(source) != os.path.realpath(device + '-part1') and os.path.realpath(source) != os.path.realpath(device):
         raise RuntimeError('HDD mount source does not match configured device')
     return {'ok': True, 'mounted': True}
 
@@ -190,8 +190,10 @@ def hdd_stop(cfg):
     device = hdd_ready(cfg)
     source = hdd_mount_source()
     if source is None:
-        raise RuntimeError('HDD mountpoint is not mounted; refusing automatic stop')
-    if os.path.realpath(source) not in (os.path.realpath(device), os.path.realpath(device + '1')):
+        # Already unmounted after a previous standby attempt; retry stop safely.
+        run('sg_start', '--readonly', '--stop', device, timeout=45)
+        return {'ok': True, 'mounted': False}
+    if os.path.realpath(source) not in (os.path.realpath(device), os.path.realpath(device + '-part1')):
         raise RuntimeError('HDD mount source does not match configured device')
     run('sync', timeout=60)
     run('umount', cfg['hdd_mountpoint'], timeout=60)
