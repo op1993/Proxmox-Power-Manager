@@ -108,6 +108,46 @@ For an **agent-only** installation, skip the web LXC and firewall steps. For a *
 
 ---
 
+
+## OIDC / SSO authentication (experimental)
+
+The web dashboard supports a generic OpenID Connect Authorization Code + PKCE
+login using an HTTPS OIDC provider. This is not tied to Authentik. Supported
+providers must publish standard OIDC discovery metadata, issue **RS256**
+signed ID tokens, and accept a confidential client with a client secret.
+
+**Prerequisites:** publish the web UI behind an HTTPS reverse proxy and set
+`PPM_PUBLIC_URL=https://your-dashboard.example.com` in
+`/etc/proxmox-power-manager/web.env` **inside the web LXC**. Set
+`PPM_HTTPS=1` there too. Restart
+`proxmox-power-manager-web.service` inside that LXC. The URL must be the
+external HTTPS origin with no trailing slash or path. The callback to register
+in your OIDC provider is
+`https://your-dashboard.example.com/auth/oidc/callback`.
+
+Open **Settings → Authorization (OIDC / SSO)** while logged in locally.
+Enter the provider's exact Issuer URL, Client ID and Client Secret, and
+optionally an allowlist of immutable OIDC `sub` values. **Without an
+allowlist, every user authenticated by the configured OIDC provider can
+access the dashboard as an administrator.** Prefer enforcing access via
+provider-side application policy as well as setting the allowlist.
+Save, sign out, and test the **Sign in with SSO** button.
+
+To disable local password login, sign in using OIDC, return to Settings and
+disable the local login checkbox within five minutes. This cannot be done
+from a password-authenticated session. Existing local sessions are rejected
+once local login is disabled. If OIDC becomes unavailable, restore local login
+via the web LXC console by editing
+`/etc/proxmox-power-manager/auth.json` to set
+`"local_login_enabled": true` and restart the web service.
+
+OIDC settings and client secret live in the web LXC's root-readable
+`auth.json`, not in the Proxmox host's power configuration. The existing
+`oidc.client_secret_env` placeholder from older installs is ignored by this
+implementation. The web service requires the `openssl` executable for
+RS256 verification. SSO does not implement periodic provider-side session
+revocation checks; already-issued dashboard sessions last up to eight hours.
+
 ## How it works
 
 ```text
