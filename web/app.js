@@ -12,6 +12,42 @@ const settingsGroups=[
   ]}
 ];
 let discoveredHdds=[];
+let authSettings=null;
+function renderAuthSettings(data){
+  authSettings=data;
+  const root=el('auth-settings');root.replaceChildren();
+  const section=document.createElement('details');section.className='settings-group';section.open=true;
+  const summary=document.createElement('summary');summary.textContent='Авторизация (OIDC / SSO)';section.append(summary);
+  const hint=document.createElement('p');hint.className='settings-hint';hint.textContent='Универсальный OpenID Connect. Для работы нужен HTTPS и PPM_PUBLIC_URL на сервере. Сначала настройте провайдера и проверьте вход, затем можно отключить пароль.';section.append(hint);
+  function field(label,id,value,type='text'){
+    const row=document.createElement('label');row.textContent=label;
+    const inp=document.createElement('input');inp.id=id;inp.type=type;
+    if(type==='checkbox')inp.checked=!!value;else inp.value=value||'';
+    if(type==='text'||type==='password')inp.style.maxWidth='350px';
+    row.append(inp);section.append(row);return inp;
+  }
+  const o=data.oidc||{};
+  field('Включить OIDC','auth-oidc-enabled',o.enabled,'checkbox');
+  field('Issuer URL','auth-issuer',o.issuer_url);
+  field('Client ID','auth-client-id',o.client_id);
+  field('Client Secret (оставьте пустым, чтобы не менять)','auth-secret','','password');
+  field('Разрешённые subject (sub), через запятую; пусто = любой пользователь провайдера','auth-subjects',(o.allowed_subjects||[]).join(', '));
+  const uri=document.createElement('p');uri.className='settings-hint';uri.textContent='Redirect URI: '+(data.redirect_uri||'Не задан (PPM_PUBLIC_URL)');section.append(uri);
+  const local=field('Разрешить локальный логин и пароль','auth-local',data.local_login_enabled,'checkbox');
+  const note=document.createElement('p');note.className='settings-hint';note.textContent='Отключение пароля возможно только из свежей OIDC-сессии после входа через SSO. Для восстановления потребуется консоль сервера.';section.append(note);
+  const button=document.createElement('button');button.textContent='Сохранить настройки авторизации';button.type='button';
+  button.onclick=async()=>{
+    button.disabled=true;
+    try{
+      const config={oidc:{enabled:el('auth-oidc-enabled').checked,issuer_url:el('auth-issuer').value.trim(),client_id:el('auth-client-id').value.trim(),allowed_subjects:el('auth-subjects').value.split(',').map(x=>x.trim()).filter(Boolean)},local_login_enabled:local.checked};
+      if(el('auth-secret').value)config.oidc.client_secret=el('auth-secret').value;
+      await request('auth/config',config);
+      el('message').textContent='Настройки авторизации сохранены';await refresh();
+    }catch(e){el('message').textContent='Авторизация: '+e.message}finally{button.disabled=false}
+  };
+  section.append(button);root.append(section);
+}
+
 let selectedHdds=[];
 function renderSettings(cfg){
   selectedHdds=(cfg.hdd_disks||[]).map(x=>({...x}));
@@ -186,8 +222,9 @@ for(const [i,name] of tabs.entries()){
   });
 }
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
-async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]}))]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);el('oidc-login').hidden=!s.oidc_enabled;el('username').parentElement.hidden=!s.local_login_enabled;el('password').parentElement.hidden=!s.local_login_enabled;el('login').hidden=!s.local_login_enabled;if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks,auth]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]})),request('auth/config')]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);renderAuthSettings(auth);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+el('oidc-login').onclick=()=>{window.location.assign('/auth/oidc/start')};
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
