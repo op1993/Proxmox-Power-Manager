@@ -75,15 +75,35 @@ function renderInfo(status){
   const track=document.createElement('div');track.className='battery-track';
   const fill=document.createElement('div');fill.className='battery-fill';fill.style.width=Math.max(0,Math.min(100,Number(status.battery_percent)||0))+'%';
   track.append(fill);root.append(track);
-  const details=document.createElement('div');details.className='info-details';
-  const items=[
-    'Conservation Mode: '+(charge.supported?(charge.mode===1?'Long Life':charge.mode===0?'Standard':'неизвестен'):'не поддерживается'),
-    'Автоматическое управление зарядкой: '+(charge.enabled?'включена':'выключена'),
-    'Автоматическое управление питанием сервера: '+(status.enabled?'включён':'выключен'),
-    'LXC: '+((status.running_containers||[]).join(', ')||'нет')
-  ];
-  if(info.power_w!=null)items.push('Мощность батареи: '+info.power_w+' Вт');
-  for(const item of items){const span=document.createElement('span');span.textContent=item;details.append(span)}
+  const details=document.createElement('div');details.className='system-status';
+  const heading=document.createElement('h3');heading.textContent='Состояние системы';details.append(heading);
+  function statusRow(label,value,active){
+    const row=document.createElement('div');row.className='system-status-row';
+    const name=document.createElement('span');name.className='system-status-label';name.textContent=label;
+    const state=document.createElement('span');state.className='system-status-value';
+    if(active!==null){state.classList.add('system-status-indicator');state.classList.add(active?'is-active':'is-inactive')}
+    state.textContent=value;row.append(name,state);details.append(row);
+  }
+  const mode=charge.supported?(charge.mode===1?'Long Life':charge.mode===0?'Standard':'Неизвестен'):'Не поддерживается';
+  statusRow('Conservation Mode',mode,charge.supported?charge.mode===1:null);
+  statusRow('Управление зарядкой',charge.enabled?'Включено':'Выключено',Boolean(charge.enabled));
+  statusRow('Автоматический сон',status.enabled?'Включён':'Выключен',Boolean(status.enabled));
+  const lxc=Array.isArray(status.running_containers)?status.running_containers:[];
+  const vms=Array.isArray(status.running_vms)?status.running_vms:[];
+  function guestRow(label,ids){
+    const wrap=document.createElement('div');wrap.className='system-guests';
+    const header=document.createElement('div');header.className='system-status-row';
+    const name=document.createElement('span');name.className='system-status-label';name.textContent=label;
+    const count=document.createElement('span');count.className='system-status-value';count.textContent=ids.length+' '+(label==='LXC'?'контейнеров':'VM');
+    header.append(name,count);wrap.append(header);
+    const chips=document.createElement('div');chips.className='guest-chips';
+    if(!ids.length){const empty=document.createElement('span');empty.className='system-status-label';empty.textContent='Нет работающих';chips.append(empty)}
+    for(const id of ids){const chip=document.createElement('span');chip.className='guest-chip';chip.textContent=String(id);chips.append(chip)}
+    wrap.append(chips);details.append(wrap);
+  }
+  guestRow('LXC',lxc);
+  if(vms.length)guestRow('Виртуальные машины',vms);
+  if(status.saved_state)statusRow('Восстановление гостей','Ожидается',null);
   root.append(details);
 }
 function renderHistory(data){
