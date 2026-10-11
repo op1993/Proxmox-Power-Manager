@@ -57,8 +57,8 @@ def _der_length(n):
 def _der(tag,data):
     return bytes([tag])+_der_length(len(data))+data
 def _int(raw):
-    raw=raw.lstrip(b'\\x00') or b'\\x00'
-    if raw[0]&128: raw=b'\\x00'+raw
+    raw=raw.lstrip(b'\x00') or b'\x00'
+    if raw[0]&128: raw=b'\x00'+raw
     return _der(2,raw)
 def verify_id_token(token, config, meta, nonce):
     head,body,sig=token.split('.')
@@ -70,8 +70,8 @@ def verify_id_token(token, config, meta, nonce):
     n=unb64(key['n']); e=unb64(key['e'])
     rsa=_der(0x30,_int(n)+_int(e))
     algorithm=_der(0x30,_der(6,bytes.fromhex('2a864886f70d010101'))+_der(5,b''))
-    spki=_der(0x30,algorithm+_der(3,b'\\x00'+rsa))
-    pem=b'-----BEGIN PUBLIC KEY-----\\n'+base64.encodebytes(spki)+b'-----END PUBLIC KEY-----\\n'
+    spki=_der(0x30,algorithm+_der(3,b'\x00'+rsa))
+    pem=b'-----BEGIN PUBLIC KEY-----\n'+base64.encodebytes(spki)+b'-----END PUBLIC KEY-----\n'
     with tempfile.TemporaryDirectory() as d:
         Path(d,'key.pem').write_bytes(pem);Path(d,'sig').write_bytes(unb64(sig))
         result=subprocess.run(['openssl','dgst','-sha256','-verify',str(Path(d,'key.pem')),'-signature',str(Path(d,'sig'))],input=(head+'.'+body).encode(),capture_output=True,timeout=5)
