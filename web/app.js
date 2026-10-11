@@ -111,7 +111,7 @@ function renderHistory(data){
     item.append(time,title,reason);root.append(item);
   }
 }
-const tabs=['overview','history','settings','simulator'];
+const tabs=['overview','history','settings'];
 function selectTab(name,focus=false){
   if(!tabs.includes(name))return;
   for(const tab of tabs){
@@ -139,5 +139,5 @@ el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login'
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
 el('save').onclick=()=>busy('save',async()=>{const payload={};for(const [key,,type] of fields){const inp=el('cfg-'+key);if(!inp){el('message').textContent='Сначала войдите';return}payload[key]=type==='bool'?inp.checked:type==='str'?inp.value:Number(inp.value)}try{await request('config',payload);el('message').textContent='Настройки сохранены';await refresh()}catch(e){el('message').textContent=e.message}});
-el('dry').onclick=()=>busy('dry',async()=>{el('simulation').textContent='Расчёт сценария...';try{const r=await request('dry-run',{ac_online:el('sim-ac').value==='true',battery_percent:Number(el('sim-battery').value),simulate_enabled:el('sim-enabled').checked,recovery:el('sim-recovery').checked});const lines=[`Сценарий: AC ${r.scenario.ac_online?'Online':'Offline'}, батарея ${r.scenario.battery_percent}%, автоматизация ${r.scenario.enabled?'включена':'выключена'}`,`Работающие LXC: ${r.guests.running_containers.join(', ')||'нет'}`,`Работающие VM: ${r.guests.running_vms.join(', ')||'нет'}`,'',...r.steps.map((x,i)=>`${i+1}. ${x.message}`)];el('simulation').textContent=lines.join('\n')}catch(e){el('simulation').textContent='Ошибка: '+e.message}});
+
 checkSession();
