@@ -25,7 +25,7 @@ ATTEMPT_LOCK = threading.Lock()
 
 def call(command, payload=None):
     routes = {'status': ('GET', '/v1/status'), 'config': ('GET', '/v1/config'),
-              'update': ('POST', '/v1/config'), 'dry-run': ('POST', '/v1/dry-run'), 'history': ('GET', '/v1/history'), 'hdd-start': ('POST', '/v1/hdd/start')}
+              'update': ('POST', '/v1/config'), 'dry-run': ('POST', '/v1/dry-run'), 'history': ('GET', '/v1/history'), 'hdd-start': ('POST', '/v1/hdd/start'), 'hdd-list': ('GET', '/v1/hdd/disks')}
     method, path = routes[command]
     token = pathlib.Path(API_TOKEN_FILE).read_text().strip()
     data = json.dumps(payload if payload is not None else {}).encode() if method == 'POST' else None
@@ -88,6 +88,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, call('status'))
             if self.path == '/api/history':
                 return self.send_json(200, call('history'))
+            if self.path == '/api/hdd/disks':
+                return self.send_json(200, call('hdd-list'))
             if self.path == '/api/config':
                 return self.send_json(200, call('config'))
             return self.send_json(404, {'error': 'Not found'})
