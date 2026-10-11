@@ -21,7 +21,7 @@ DEFAULTS = dict(enabled=False, sleep_threshold=30, low_threshold=15,
                 battery_path='/sys/class/power_supply/BAT0/capacity',
                 manage_vms=True, critical_action='poweroff',
                 minimum_restore_percent=0, charge_control_enabled=False,
-                charge_lower_percent=70, charge_upper_percent=80,
+                charge_upper_percent=80,
                 hdd_spindown_enabled=False, hdd_disks=[])
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', stream=sys.stdout)
 log = logging.getLogger('ppm')
@@ -47,10 +47,8 @@ def validate(cfg):
               'low_wake_minutes','check_seconds','shutdown_timeout','minimum_restore_percent'):
         if type(cfg[k]) is not int: raise ValueError(f'{k} must be integer')
     if type(cfg['charge_control_enabled']) is not bool: raise ValueError('charge_control_enabled must be boolean')
-    for k in ('charge_lower_percent','charge_upper_percent'):
-        if type(cfg[k]) is not int: raise ValueError(f'{k} must be integer')
-    if not 0 <= cfg['charge_lower_percent'] < cfg['charge_upper_percent'] <= 100:
-        raise ValueError('Invalid charge control thresholds')
+    if type(cfg['charge_upper_percent']) is not int or not 1 <= cfg['charge_upper_percent'] <= 100:
+        raise ValueError('Invalid charge upper threshold')
     if type(cfg['enabled']) is not bool or type(cfg['manage_vms']) is not bool:
         raise ValueError('enabled/manage_vms must be boolean')
     if not (0 < cfg['critical_threshold'] < cfg['low_threshold'] < cfg['sleep_threshold'] <= 100):
@@ -292,6 +290,8 @@ def critical(cfg, dry_run=False):
 
 
 def cycle(cfg, dry_run=False):
+    if not dry_run:
+        __import__('charge_control').tick(cfg)
     st = status(cfg)
     if not dry_run:
         try:
