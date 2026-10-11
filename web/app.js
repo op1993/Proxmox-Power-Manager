@@ -1,11 +1,11 @@
 let csrf='';
-const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str']];
+const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['force_stop_mode','После тайм-аута','choice'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str']];
 const settingsGroups=[
   {title:'Управление зарядом аккумулятора',description:'Lenovo Conservation Mode и пороги управления зарядом.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
   {title:'Управление отключением/включением сервера',description:'Настройки автоматического сна и восстановления гостей.',toggle:'enabled',sections:[
     {title:'Экономный режим',description:'Когда переходить в сон и через сколько минут просыпаться.',keys:['sleep_threshold','normal_wake_minutes']},
     {title:'Критический режим',description:'Порог энергосбережения и увеличенный интервал сна.',keys:['low_threshold','low_wake_minutes']},
-    {title:'Остановка и восстановление контейнеров',description:'Проверка фактической остановки гостей перед сном обязательна.',keys:['shutdown_timeout','manage_vms','minimum_restore_percent']},
+    {title:'Остановка и восстановление контейнеров',description:'Проверка фактической остановки гостей перед сном обязательна.',keys:['shutdown_timeout','force_stop_mode','manage_vms','minimum_restore_percent']},
     {title:'Мониторинг питания',description:'Как часто проверять питание, пока сервер работает.',keys:['check_seconds']},
     {title:'Аварийная защита',description:'Отдельный критический порог и действие при почти разряженной батарее.',keys:['critical_threshold','critical_action']}
   ]}
@@ -18,10 +18,17 @@ function renderSettings(cfg){
       const field=definitions.get(key);if(!field)continue;
       const [,label,type]=field;
       const row=document.createElement('label');row.textContent=label;
-      const inp=document.createElement('input');inp.id='cfg-'+key;
-      inp.type=type==='bool'?'checkbox':type==='str'?'text':'number';
-      if(type==='bool')inp.checked=cfg[key]===true;
-      else inp.value=cfg[key]??'';
+      const inp=document.createElement(type==='choice'?'select':'input');inp.id='cfg-'+key;
+      if(type==='choice'){
+        for(const [value,title] of [['never','Не останавливать принудительно'],['low','При экономном пороге (15%)'],['sleep','При пороге сна (30%)']]){
+          const option=document.createElement('option');option.value=value;option.textContent=title;inp.append(option);
+        }
+        inp.value=cfg[key]??'never';
+      }else{
+        inp.type=type==='bool'?'checkbox':type==='str'?'text':'number';
+        if(type==='bool')inp.checked=cfg[key]===true;
+        else inp.value=cfg[key]??'';
+      }
       row.append(inp);container.append(row);
     }
   }
@@ -158,6 +165,6 @@ async function refresh(){el('status').textContent='Загрузка состоя
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
-el('save').onclick=()=>busy('save',async()=>{const payload={};for(const [key,,type] of fields){const inp=el('cfg-'+key);if(!inp){el('message').textContent='Сначала войдите';return}payload[key]=type==='bool'?inp.checked:type==='str'?inp.value:Number(inp.value)}try{await request('config',payload);el('message').textContent='Настройки сохранены';await refresh()}catch(e){el('message').textContent=e.message}});
+el('save').onclick=()=>busy('save',async()=>{const payload={};for(const [key,,type] of fields){const inp=el('cfg-'+key);if(!inp){el('message').textContent='Сначала войдите';return}payload[key]=type==='bool'?inp.checked:(type==='str'||type==='choice')?inp.value:Number(inp.value)}try{await request('config',payload);el('message').textContent='Настройки сохранены';await refresh()}catch(e){el('message').textContent=e.message}});
 
 checkSession();
