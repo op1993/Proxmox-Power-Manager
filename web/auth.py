@@ -32,19 +32,36 @@ def load_auth():
         raise ValueError('Incomplete auth config')
     return data
 
-def sign_session(config):
+def sign_session(config, method='local'):
     expires = str(int(time.time()) + SESSION_SECONDS)
     nonce = secrets.token_urlsafe(24)
-    payload = f'{expires}.{nonce}'
+    payload = f'{expires}.{nonce}.{method}'
     signature = hmac.new(bytes.fromhex(config['session_secret']), payload.encode(), hashlib.sha256).hexdigest()
     return f'{payload}.{signature}', nonce
 
 def verify_session(cookie, config):
     try:
-        expires, nonce, signature = cookie.split('.')
+        expires, nonce, method, signature = cookie.split('.')
+        if method not in ('local','oidc'): return None
+        if method == 'local' and not config.get('local_login_enabled',True): return None
+        if method == 'oidc' and not config.get('oidc',{}).get('enabled',False): return None
         if int(expires) < time.time() or int(expires) > time.time() + SESSION_SECONDS + 60:
             return None
-        expected = hmac.new(bytes.fromhex(config['session_secret']), f'{expires}.{nonce}'.encode(), hashlib.sha256).hexdigest()
+        expected = hmac.new(bytes.fromhex(config['session_secret']), f'{expires}.{nonce}.{method}'.encode(), hashlib.sha256).hexdigest()
         return nonce if hmac.compare_digest(expected, signature) else None
     except (ValueError, AttributeError):
         return None
+
+def save_auth(config):
+    import tempfile
+    import fcntl
+    lock=AUTH_PATH.with_suffix('.lock')
+    with open(lock,'a+') as f:
+        fcntl.flock(f,fcntl.LOCK_EX)
+        fd,name=tempfile.mkstemp(prefix='.auth-',dir=str(AUTH_PATH.parent))
+        try:
+            with os.fdopen(fd,'w') as out:
+                json.dump(config,out,indent=2);out.flush();os.fsync(out.fileno())
+            os.chmod(name,0o600);os.replace(name,AUTH_PATH)
+        finally:
+            if os.path.exists(name): os.unlink(name)
