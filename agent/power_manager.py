@@ -15,7 +15,7 @@ STATE = Path('/var/lib/proxmox-power-manager/state.json')
 LOCK = Path('/run/proxmox-power-manager.lock')
 DEFAULTS = dict(enabled=False, sleep_threshold=30, low_threshold=15,
                 critical_threshold=8, normal_wake_minutes=15, low_wake_minutes=60,
-                check_seconds=60, shutdown_timeout=120, force_stop_mode='never',
+                check_seconds=60, shutdown_timeout=120, force_stop_sleep=False, force_stop_low=False,
                 ac_path='/sys/class/power_supply/ADP0/online',
                 battery_path='/sys/class/power_supply/BAT0/capacity',
                 manage_vms=True, critical_action='poweroff',
@@ -58,7 +58,8 @@ def validate(cfg):
     if not 10 <= cfg['check_seconds'] <= 3600: raise ValueError('Invalid check_seconds')
     if not 30 <= cfg['shutdown_timeout'] <= 3600: raise ValueError('Invalid shutdown_timeout')
     if not 0 <= cfg['minimum_restore_percent'] <= 100: raise ValueError('Invalid minimum_restore_percent')
-    if cfg['force_stop_mode'] not in ('never','low','sleep'): raise ValueError('Invalid force_stop_mode')
+    for key in ('force_stop_sleep','force_stop_low'):
+        if type(cfg[key]) is not bool: raise ValueError(f'{key} must be boolean')
     if cfg['critical_action'] not in ('poweroff','warn'): raise ValueError('Invalid critical_action')
     return cfg
 
@@ -214,9 +215,9 @@ def cycle(cfg, dry_run=False):
     minutes = cfg['low_wake_minutes'] if st['battery_percent'] <= cfg['low_threshold'] else cfg['normal_wake_minutes']
     if dry_run or not cfg['enabled']:
         log.info('Would stop guests and suspend for %s minutes',minutes); return
-    force_mode = cfg['force_stop_mode']
-    allow_force = (force_mode == 'sleep' or
-                   (force_mode == 'low' and read_int(cfg['battery_path']) <= cfg['low_threshold']))
+    current_percent = read_int(cfg['battery_path'])
+    allow_force = (cfg['force_stop_low'] if current_percent <= cfg['low_threshold']
+                   else cfg['force_stop_sleep'])
     if not stop_guests(cfg, force=allow_force): return
     if ac_online(cfg):
         log.info('AC returned before suspend'); restore_guests(cfg); return
