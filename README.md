@@ -302,7 +302,7 @@ The threshold ordering must satisfy `critical_threshold < low_threshold < sleep_
 
 The dashboard **requires a local username and password**. On first installation it generates a random `admin` password and stores only its salted `scrypt` hash. Authentication settings are stored **inside the LXC** at `/etc/proxmox-power-manager/auth.json` (permissions `0600`), not in the source repository. Session cookies are HttpOnly and SameSite=Strict, with CSRF protections and per-IP login throttling.
 
-The `oidc` section in `auth.json` reserves `enabled`, `issuer_url`, `client_id` and `client_secret_env` for future Google, Authentik, Keycloak or other OIDC support. **OIDC login is not implemented; changing these fields does not enable it.** Local login cannot be disabled in this version.
+The `oidc` section in `auth.json` reserves `enabled`, `issuer_url`, `client_id` and `client_secret_env` for future Google, Authentik, Keycloak or other OIDC support. OIDC is now implemented through the web authorization settings; the legacy `client_secret_env` placeholder is ignored. Local login can be disabled only after a successful OIDC sign-in.
 
 The web server listens on plain HTTP port 8080. Use a trusted LAN only or place it behind an HTTPS reverse proxy with appropriate network controls. `PPM_HTTPS=1` in the web service environment marks cookies `Secure` when served through HTTPS. A password does **not** encrypt plain HTTP traffic.
 
