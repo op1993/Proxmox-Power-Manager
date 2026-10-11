@@ -36,6 +36,56 @@ ppm version
 systemctl status proxmox-power-manager.service
 ```
 
+### Choose an update branch (development vs. main)
+
+`ppm update` reads the installed branch from `/etc/proxmox-power-manager/update-ref`. The file is created by the installer and normally points to `feature/installer-v0.6` for this development installation.
+
+**Update from the feature branch** (keep testing unreleased changes):
+
+```bash
+printf '%s\\n' 'feature/installer-v0.6' > /etc/proxmox-power-manager/update-ref
+ppm update
+```
+
+**Update from `main`** (after the required changes have been merged there):
+
+```bash
+printf '%s\\n' 'main' > /etc/proxmox-power-manager/update-ref
+ppm update
+```
+
+Check the selected branch with `ppm version`. These commands must be run as root on the Proxmox host. Switching the update source is **not a downgrade mechanism**: before switching to `main`, confirm that `main` contains the version you want and that the updater supports your installed configuration. Back up settings and test updates before changing branches on a host managing power and guest recovery.
+
+For a **fresh installation directly from main**, use:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/op1993/Proxmox-Power-Manager/main/install.sh | PPM_REF=main bash
+```
+
+Review the installer on `main` before running it. The command only works if that branch contains the corresponding bootstrap installer.
+
+### Merge the feature branch into main
+
+Use a GitHub Pull Request to review and merge the feature branch:
+
+1. Push your local commits (if any): `git push origin feature/installer-v0.6`.
+2. Open [GitHub Pull Requests](https://github.com/op1993/Proxmox-Power-Manager/pulls) → **New pull request**.
+3. Set **base: `main`** and **compare: `feature/installer-v0.6`**. Review the diff, ensure CI/tests pass, and create the PR.
+4. Merge the PR into `main` after review. Keep the feature branch until you have verified installation/update from `main`.
+5. On the Proxmox host, switch the update source to `main` using the commands above.
+
+Alternatively, if you manage the repository locally and have permission to push `main`:
+
+```bash
+git fetch origin
+git switch main
+git pull --ff-only origin main
+git merge --no-ff origin/feature/installer-v0.6
+git push origin main
+```
+
+Prefer the Pull Request route when branch protection or CI checks are configured. Merging code into `main` does **not** automatically update installed Proxmox hosts; run `ppm update` on each host after selecting the intended branch.
+
 ### Uninstall manually (no automatic removal)
 
 **Deleting the PPM web LXC from the Proxmox GUI does not uninstall PPM from the host.** The lifecycle watcher only detects a missing installer-owned container; its `cleanup-ready` marker is informational. The experimental `cleanup_plan.py` and `cleanup-policy.json` do **not** implement automatic deletion, even if `automatic_cleanup` is set to `true`. Automatic removal was intentionally left unimplemented.
