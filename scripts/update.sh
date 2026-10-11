@@ -7,7 +7,7 @@ BASE=/opt/proxmox-power-manager
 CFG=/etc/proxmox-power-manager
 [[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
 command -v pct >/dev/null || { echo 'Proxmox pct command required' >&2; exit 1; }
-python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history}.py "$ROOT"/web/{server,auth}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
+python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history}.py "$ROOT"/web/{server,auth,oidc,oidc_discovery}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
 if [[ -d "$ROOT/tests" ]]; then
   python3 -m unittest discover -s "$ROOT/tests" -v
 fi
@@ -91,7 +91,7 @@ if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; t
   systemctl is-active --quiet proxmox-power-manager-api.service
 fi
 if [[ -n "$ctid" ]]; then
-  for f in server.py auth.py index.html app.js; do
+  for f in server.py auth.py oidc.py oidc_discovery.py index.html app.js; do
     pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"
   done
   pct push "$ctid" "$ROOT/systemd/proxmox-power-manager-web.service" /etc/systemd/system/proxmox-power-manager-web.service
