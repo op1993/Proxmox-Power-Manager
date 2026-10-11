@@ -10,6 +10,8 @@ import sys
 
 import cleanup_watch
 
+OPT_IN = Path('/etc/proxmox-power-manager/cleanup-policy.json')
+
 HOST_FILES = [
     '/usr/local/bin/ppm',
     '/etc/systemd/system/proxmox-power-manager.service',
@@ -36,7 +38,19 @@ def plan():
             data.get('installation_complete') is not True):
         raise ValueError('Not a completed PPM-owned LXC installation')
 
+    policy = json.loads(OPT_IN.read_text()) if OPT_IN.is_file() else {}
+    if type(policy) is not dict:
+        raise ValueError('Invalid cleanup policy')
+    enabled = policy.get('automatic_cleanup', False) is True
+    ac_path = Path('/sys/class/power_supply/ADP0/online')
+    ac_connected = ac_path.is_file() and ac_path.read_text().strip() == '1'
     result = {
+        'automatic_cleanup_enabled': enabled,
+        'ac_connected': ac_connected,
+        'eligible_for_cleanup': enabled and ac_connected and
+            cleanup_watch.READY.is_file() and
+            cleanup_watch.READY.read_text().strip() == str(ctid) and
+            not cleanup_watch.RECOVERY.exists(),
         'mode': 'dry-run',
         'web_ctid': ctid,
         'confirmed_deleted': cleanup_watch.READY.is_file()
