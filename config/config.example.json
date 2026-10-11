@@ -11,5 +11,8 @@
   "battery_path": "/sys/class/power_supply/BAT0/capacity",
   "manage_vms": true,
   "critical_action": "poweroff",
-  "minimum_restore_percent": 15
+  "minimum_restore_percent": 15,
+  "hdd_spindown_enabled": false,
+  "hdd_device": "",
+  "hdd_mountpoint": "/mnt/storage"
 }
