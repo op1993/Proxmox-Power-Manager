@@ -7,7 +7,7 @@ BASE=/opt/proxmox-power-manager
 CFG=/etc/proxmox-power-manager
 [[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
 command -v pct >/dev/null || { echo 'Proxmox pct command required' >&2; exit 1; }
-python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history}.py "$ROOT"/web/{server,auth}.py
+python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history}.py "$ROOT"/web/{server,auth}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
 if [[ -d "$ROOT/tests" ]]; then
   python3 -m unittest discover -s "$ROOT/tests" -v
 fi
@@ -41,7 +41,8 @@ if [[ -n "$ctid" ]]; then
 fi
 stamp="$(date +%Y%m%d%H%M%S)"
 backup="/var/backups/proxmox-power-manager/$stamp"
-mkdir -p "$backup/agent" "$backup/systemd"
+mkdir -p "$backup/agent" "$backup/systemd" "$backup/cleanup"
+if [[ -d "$BASE/cleanup" ]]; then cp -a "$BASE/cleanup/." "$backup/cleanup/"; fi
 cp -a "$BASE/agent/." "$backup/agent/"
 for unit in proxmox-power-manager.service proxmox-power-manager-api.service; do
   [[ ! -f "/etc/systemd/system/$unit" ]] || cp -a "/etc/systemd/system/$unit" "$backup/systemd/"
@@ -54,6 +55,7 @@ fi
 rollback() {
   echo 'Update failed; rolling back application files' >&2
   cp -a "$backup/agent/." "$BASE/agent/"
+  if [[ -d "$BASE/cleanup" ]]; then cp -a "$backup/cleanup/." "$BASE/cleanup/"; fi
   cp -a "$backup/systemd/." /etc/systemd/system/
   systemctl daemon-reload
   systemctl restart proxmox-power-manager.service || true
@@ -71,11 +73,16 @@ trap rollback ERR
 for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py; do
   install -m 0755 "$ROOT/agent/$f" "$BASE/agent/$f"
 done
-for unit in proxmox-power-manager.service proxmox-power-manager-api.service; do
+for unit in proxmox-power-manager.service proxmox-power-manager-api.service proxmox-power-manager-cleanup.service proxmox-power-manager-cleanup.timer; do
   if [[ -f "/etc/systemd/system/$unit" ]]; then
     install -m 0644 "$ROOT/systemd/$unit" "/etc/systemd/system/$unit"
   fi
 done
+if [[ -f "$CFG/installation.json" ]]; then
+  install -d -m 0755 "$BASE/cleanup"
+  install -m 0755 "$ROOT/scripts/cleanup_watch.py" "$BASE/cleanup/cleanup_watch.py"
+  install -m 0755 "$ROOT/scripts/cleanup_plan.py" "$BASE/cleanup/cleanup_plan.py"
+fi
 systemctl daemon-reload
 systemctl restart proxmox-power-manager.service
 systemctl is-active --quiet proxmox-power-manager.service
