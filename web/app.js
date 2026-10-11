@@ -1,6 +1,7 @@
 let csrf='';
-const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['force_stop_sleep','Принудительно останавливать гостей после тайм-аута','bool'],['force_stop_low','Принудительно останавливать гостей после тайм-аута','bool'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str']];
+const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['force_stop_sleep','Принудительно останавливать гостей после тайм-аута','bool'],['force_stop_low','Принудительно останавливать гостей после тайм-аута','bool'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str'],['hdd_spindown_enabled','Останавливать HDD после остановки гостей','bool'],['hdd_device','Путь к HDD (/dev/disk/by-id/...)','str']];
 const settingsGroups=[
+  {title:'Жёсткий диск',description:'Остановка HDD после остановки гостей и размонтирования /mnt/storage. Укажи стабильный путь к диску.',keys:['hdd_device','hdd_spindown_enabled']},
   {title:'Управление зарядом аккумулятора',description:'Lenovo Conservation Mode и пороги управления зарядом.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
   {title:'Управление отключением/включением сервера',description:'Настройки автоматического сна и восстановления гостей.',toggle:'enabled',sections:[
     {title:'Экономный режим',description:'Когда переходить в сон и через сколько минут просыпаться.',keys:['sleep_threshold','normal_wake_minutes','force_stop_sleep']},
@@ -50,6 +51,11 @@ function renderSettings(cfg){
       const sync=()=>{body.hidden=!toggle.checked};
       toggle.addEventListener('change',sync);sync();details.append(body);
     }else addFields(details,group.keys);
+    if(group.title==='Жёсткий диск'){
+      const btn=document.createElement('button');btn.type='button';btn.textContent='Принудительно запустить HDD и смонтировать';
+      btn.onclick=async()=>{btn.disabled=true;try{await request('hdd/start',{});el('message').textContent='HDD запущен и смонтирован';await refresh()}catch(e){el('message').textContent='Ошибка запуска HDD: '+e.message}finally{btn.disabled=false}};
+      details.append(btn);
+    }
     root.append(details);
   }
 }
