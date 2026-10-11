@@ -174,7 +174,7 @@ fi
 pct exec "$ctid" -- apt-get update
 pct exec "$ctid" -- apt-get install -y python3 ca-certificates
 pct exec "$ctid" -- mkdir -p /opt/proxmox-power-manager/web /etc/proxmox-power-manager
-for f in server.py auth.py index.html app.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
+for f in server.py auth.py oidc.py oidc_discovery.py index.html app.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
 KEY_DIR=/etc/proxmox-power-manager
 # Private HTTPS API; certificate contains the Proxmox LAN IP as an IP SAN.
 if [[ -f "$KEY_DIR/api.crt" ]]; then
