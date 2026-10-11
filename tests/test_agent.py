@@ -13,8 +13,9 @@ spec.loader.exec_module(ppm)
 
 class AgentTests(unittest.TestCase):
     def test_force_stop_policy_defaults_safe(self):
-        self.assertEqual(ppm.validate({})['force_stop_mode'],'never')
-        with self.assertRaises(ValueError): ppm.validate({'force_stop_mode':'invalid'})
+        self.assertFalse(ppm.validate({})['force_stop_sleep'])
+        self.assertFalse(ppm.validate({})['force_stop_low'])
+        with self.assertRaises(ValueError): ppm.validate({'force_stop_low':'yes'})
 
     def test_force_stop_after_graceful_timeout(self):
         cfg=ppm.validate({})
