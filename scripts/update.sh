@@ -17,12 +17,6 @@ cfg=json.loads(pathlib.Path('/etc/proxmox-power-manager/config.json').read_text(
 if pathlib.Path('/var/lib/proxmox-power-manager/state.json').exists():
     raise SystemExit('Pending guest recovery: refusing update')
 PY
-if [[ -f /run/proxmox-power-manager.lock ]]; then
-  if ! flock -n /run/proxmox-power-manager.lock -c true; then
-    echo 'ERROR: Power Manager operation is active; refusing update.' >&2
-    exit 1
-  fi
-fi
 ctid=""
 if [[ -f "$CFG/installation.json" ]]; then
   ctid="$(python3 - <<'PY'
