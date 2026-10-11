@@ -22,7 +22,7 @@ DEFAULTS = dict(enabled=False, sleep_threshold=30, low_threshold=15,
                 manage_vms=True, critical_action='poweroff',
                 minimum_restore_percent=0, charge_control_enabled=False,
                 charge_lower_percent=70, charge_upper_percent=80,
-                hdd_spindown_enabled=False, hdd_device='', hdd_mountpoint='/mnt/storage')
+                hdd_spindown_enabled=False, hdd_disks=[])
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', stream=sys.stdout)
 log = logging.getLogger('ppm')
 
@@ -63,9 +63,19 @@ def validate(cfg):
     for key in ('force_stop_sleep','force_stop_low'):
         if type(cfg[key]) is not bool: raise ValueError(f'{key} must be boolean')
     if type(cfg['hdd_spindown_enabled']) is not bool: raise ValueError('hdd_spindown_enabled must be boolean')
-    if not isinstance(cfg['hdd_device'], str) or (cfg['hdd_device'] and not cfg['hdd_device'].startswith('/dev/disk/by-id/')): raise ValueError('Use /dev/disk/by-id/... for HDD')
-    if not isinstance(cfg['hdd_mountpoint'], str) or cfg['hdd_mountpoint'] != '/mnt/storage': raise ValueError('Only /mnt/storage is supported')
-    if cfg['hdd_spindown_enabled'] and not cfg['hdd_device']: raise ValueError('Set HDD device before enabling spindown')
+    if type(cfg['hdd_disks']) is not list or len(cfg['hdd_disks']) > 16:
+        raise ValueError('Invalid HDD selection')
+    for disk in cfg['hdd_disks']:
+        if type(disk) is not dict or set(disk) != {'device', 'mountpoint'}:
+            raise ValueError('Invalid HDD entry')
+        if not isinstance(disk['device'], str) or not disk['device'].startswith('/dev/disk/by-id/'):
+            raise ValueError('HDD requires stable by-id path')
+        if not isinstance(disk['mountpoint'], str) or not disk['mountpoint'].startswith('/') or disk['mountpoint'] == '/':
+            raise ValueError('Invalid HDD mountpoint')
+    if len({x['device'] for x in cfg['hdd_disks']}) != len(cfg['hdd_disks']):
+        raise ValueError('Duplicate HDD')
+    if cfg['hdd_spindown_enabled'] and not cfg['hdd_disks']:
+        raise ValueError('Select at least one HDD')
     if cfg['critical_action'] not in ('poweroff','warn'): raise ValueError('Invalid critical_action')
     return cfg
 
@@ -154,53 +164,80 @@ def stop_guests(cfg, force=False):
 
 
 
-def hdd_ready(cfg):
-    """Only the explicitly configured stable disk path may be controlled."""
-    device = cfg['hdd_device']
-    if not device or not device.startswith('/dev/disk/by-id/'):
-        raise ValueError('Configure a /dev/disk/by-id/... HDD path')
-    if not Path(device).exists() or not Path(device).resolve().is_block_device():
-        raise RuntimeError('Configured HDD not found')
-    if not shutil.which('sg_start'):
-        raise RuntimeError('sg_start is not installed (install sg3-utils)')
-    return device
+def discover_hdds():
+    """Return only mounted non-system rotational disks with stable identifiers."""
+    import stat
+    ls = json.loads(run('lsblk', '-J', '-b', '-o', 'NAME,PATH,TYPE,ROTA,SIZE,MODEL,MOUNTPOINTS').stdout)
+    result = []
+    for entry in ls['blockdevices']:
+        if entry.get('type') != 'disk' or entry.get('rota') is not True:
+            continue
+        real = os.path.realpath(entry['path'])
+        aliases = sorted(str(p) for p in Path('/dev/disk/by-id').glob('*')
+                         if '-part' not in p.name and os.path.realpath(p) == real)
+        if not aliases:
+            continue
+        for part in entry.get('children') or []:
+            if part.get('type') != 'part':
+                continue
+            for mountpoint in part.get('mountpoints') or []:
+                if not mountpoint or mountpoint == '/' or mountpoint.startswith(('/boot', '/etc/pve', '/var/lib/vz')):
+                    continue
+                if not Path(mountpoint).is_dir():
+                    continue
+                result.append(dict(device=aliases[0], mountpoint=mountpoint,
+                                   model=(entry.get('model') or '').strip(), size=entry.get('size')))
+    return result
 
 
-def hdd_mount_source():
-    proc = run('findmnt', '-n', '-o', 'SOURCE', '--target', '/mnt/storage', check=False)
-    if proc.returncode:
-        return None
-    # findmnt --target may return the parent filesystem; require an exact mountpoint.
-    exact = run('findmnt', '-n', '-o', 'SOURCE', '--mountpoint', '/mnt/storage', check=False)
-    return exact.stdout.strip() if exact.returncode == 0 else None
+def selected_disks(cfg):
+    available = {(x['device'], x['mountpoint']): x for x in discover_hdds()}
+    selected = []
+    for disk in cfg['hdd_disks']:
+        key = (disk['device'], disk['mountpoint'])
+        if key not in available:
+            raise RuntimeError('Selected HDD is missing or not safely mounted: ' + disk['device'])
+        selected.append(disk)
+    return selected
 
 
-def hdd_start(cfg):
-    device = hdd_ready(cfg)
-    if hdd_mount_source() is None:
-        run('sg_start', '--readonly', '--start', device, timeout=45)
-        run('mount', cfg['hdd_mountpoint'], timeout=45)
-    source = hdd_mount_source()
-    if source is None or os.path.realpath(source) != os.path.realpath(device + '-part1') and os.path.realpath(source) != os.path.realpath(device):
-        raise RuntimeError('HDD mount source does not match configured device')
-    return {'ok': True, 'mounted': True}
+def mount_source(mountpoint):
+    r = run('findmnt', '-n', '-o', 'SOURCE', '--mountpoint', mountpoint, check=False)
+    return r.stdout.strip() if r.returncode == 0 else None
 
 
 def hdd_stop(cfg):
-    device = hdd_ready(cfg)
-    source = hdd_mount_source()
-    if source is None:
-        # Already unmounted after a previous standby attempt; retry stop safely.
-        run('sg_start', '--readonly', '--stop', device, timeout=45)
-        return {'ok': True, 'mounted': False}
-    if os.path.realpath(source) not in (os.path.realpath(device), os.path.realpath(device + '-part1')):
-        raise RuntimeError('HDD mount source does not match configured device')
-    run('sync', timeout=60)
-    run('umount', cfg['hdd_mountpoint'], timeout=60)
-    if hdd_mount_source() is not None:
-        raise RuntimeError('HDD still mounted')
-    run('sg_start', '--readonly', '--stop', device, timeout=45)
-    return {'ok': True, 'mounted': False}
+    disks = selected_disks(cfg)
+    if not shutil.which('sg_start'):
+        raise RuntimeError('Install sg3-utils on the Proxmox host')
+    for disk in disks:
+        source = mount_source(disk['mountpoint'])
+        if not source:
+            raise RuntimeError('Mountpoint is not mounted: ' + disk['mountpoint'])
+        if os.path.realpath(source) == '/':
+            raise RuntimeError('Refusing system disk')
+        run('sync', timeout=60)
+        run('umount', disk['mountpoint'], timeout=60)
+        if mount_source(disk['mountpoint']):
+            raise RuntimeError('HDD still mounted')
+        run('sg_start', '--readonly', '--stop', disk['device'], timeout=45)
+    return {'ok': True, 'stopped': len(disks)}
+
+
+def hdd_start(cfg):
+    if not shutil.which('sg_start'):
+        raise RuntimeError('Install sg3-utils on the Proxmox host')
+    # Do not rediscover after unmount: use the previously validated configured selection.
+    for disk in cfg['hdd_disks']:
+        if not Path(disk['device']).exists():
+            raise RuntimeError('Selected HDD missing: ' + disk['device'])
+        if mount_source(disk['mountpoint']):
+            continue
+        run('sg_start', '--readonly', '--start', disk['device'], timeout=45)
+        run('mount', disk['mountpoint'], timeout=45)
+        if not mount_source(disk['mountpoint']):
+            raise RuntimeError('Failed to mount: ' + disk['mountpoint'])
+    return {'ok': True, 'started': len(cfg['hdd_disks'])}
 
 
 def restore_guests(cfg):
