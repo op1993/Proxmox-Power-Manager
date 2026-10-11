@@ -8,7 +8,8 @@ LOCK = pathlib.Path('/run/proxmox-power-manager-config.lock')
 FIELDS = {'enabled': bool, 'sleep_threshold': int, 'low_threshold': int, 'critical_threshold': int,
           'normal_wake_minutes': int, 'low_wake_minutes': int, 'check_seconds': int, 'shutdown_timeout': int,
           'manage_vms': bool, 'charge_control_enabled': bool, 'force_stop_sleep': bool, 'force_stop_low': bool,
-          'charge_lower_percent': int, 'charge_upper_percent': int, 'critical_action': str, 'minimum_restore_percent': int}
+          'charge_lower_percent': int, 'charge_upper_percent': int,
+          'hdd_spindown_enabled': bool, 'hdd_device': str, 'critical_action': str, 'minimum_restore_percent': int}
 
 def output(data):
     print(json.dumps(data, ensure_ascii=False))
@@ -31,6 +32,10 @@ def validate(old, changes):
     for key in ('normal_wake_minutes','low_wake_minutes','check_seconds','shutdown_timeout'):
         if not (1 <= new[key] <= (1440 if 'minutes' in key else 3600)):
             raise ValueError(f'Out of range: {key}')
+    if new.get('hdd_device') and not new['hdd_device'].startswith('/dev/disk/by-id/'):
+        raise ValueError('HDD path must start with /dev/disk/by-id/')
+    if new.get('hdd_spindown_enabled') and not new.get('hdd_device'):
+        raise ValueError('Set HDD path before enabling spindown')
     if new.get('critical_action','poweroff') not in ('poweroff','warn'): raise ValueError('Invalid critical action')
     if not 0 <= new.get('minimum_restore_percent',0) <= 100: raise ValueError('Invalid restore threshold')
     return new
@@ -40,6 +45,10 @@ def execute(action, changes=None):
         proc = subprocess.run(['/usr/bin/python3','/opt/proxmox-power-manager/agent/power_manager.py','status'], capture_output=True, text=True, timeout=25)
         if proc.returncode: raise RuntimeError('Status unavailable')
         return json.loads(proc.stdout)
+    if action == 'hdd-start':
+        if changes not in ({}, None): raise ValueError('Unexpected payload')
+        import power_manager
+        return power_manager.hdd_start(power_manager.load_config())
     if action == 'history':
         from event_history import today
         return today()
