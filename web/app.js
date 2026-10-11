@@ -1,7 +1,7 @@
 let csrf='';
 const fields=[['enabled','Автоматический сон','bool'],['charge_control_enabled','Управлять зарядкой Lenovo (экспериментально)','bool'],['charge_lower_percent','Возобновить зарядку при, %','int'],['charge_upper_percent','Включить Conservation Mode при, %','int'],['sleep_threshold','Порог сна, %','int'],['low_threshold','Экономный режим, %','int'],['critical_threshold','Критический заряд, %','int'],['normal_wake_minutes','Пробуждение, минут','int'],['low_wake_minutes','Редкое пробуждение, минут','int'],['check_seconds','Проверка, секунд','int'],['shutdown_timeout','Остановка гостей, секунд','int'],['force_stop_sleep','Принудительно останавливать гостей после тайм-аута','bool'],['force_stop_low','Принудительно останавливать гостей после тайм-аута','bool'],['manage_vms','Управлять VM','bool'],['minimum_restore_percent','Минимальный заряд для восстановления, %','int'],['critical_action','Критическое действие (poweroff/warn)','str'],['hdd_spindown_enabled','Останавливать HDD после остановки гостей','bool']];
 const settingsGroups=[
-  {title:'Жёсткий диск',description:'Остановка HDD после остановки гостей и размонтирования /mnt/storage. Выбери один или несколько обнаруженных дисков.',keys:['hdd_spindown_enabled']},
+  {title:'Жёсткий диск',description:'Выберите один или несколько HDD. Диски будут размонтированы и остановлены после завершения работы контейнеров и VM.',keys:['hdd_spindown_enabled']},
   {title:'Управление зарядом аккумулятора',description:'Lenovo Conservation Mode и пороги управления зарядом.',keys:['charge_control_enabled','charge_lower_percent','charge_upper_percent']},
   {title:'Управление отключением/включением сервера',description:'Настройки автоматического сна и восстановления гостей.',toggle:'enabled',sections:[
     {title:'Экономный режим',description:'Когда переходить в сон и через сколько минут просыпаться.',keys:['sleep_threshold','normal_wake_minutes','force_stop_sleep']},
@@ -53,18 +53,25 @@ function renderSettings(cfg){
       const toggle=toggleWrap.querySelector('input');
       const sync=()=>{body.hidden=!toggle.checked};
       toggle.addEventListener('change',sync);sync();details.append(body);
-    }else addFields(details,group.keys);
+    }else if(group.title!=='Жёсткий диск')addFields(details,group.keys);
     if(group.title==='Жёсткий диск'){
+      const heading=document.createElement('h3');heading.textContent='Выберите диски';details.append(heading);
+      const count=document.createElement('p');count.setAttribute('aria-live','polite');
+      const toggleArea=document.createElement('div');
+      const warning=document.createElement('p');warning.setAttribute('role','alert');
+      const toggle=document.createElement('input');toggle.type='checkbox';toggle.id='cfg-hdd_spindown_enabled';toggle.checked=cfg.hdd_spindown_enabled===true;
+      const toggleLabel=document.createElement('label');toggleLabel.append(toggle,document.createTextNode(' Останавливать выбранные HDD автоматически'));
+      const updateSelection=()=>{count.textContent='Выбрано дисков: '+selectedHdds.length;warning.textContent=toggle.checked&&!selectedHdds.length?'Выберите хотя бы один HDD, чтобы включить автоматическую остановку.':''};
       const list=document.createElement('div');
       for(const disk of discoveredHdds){
         const line=document.createElement('label');
         const check=document.createElement('input');check.type='checkbox';
         check.checked=selectedHdds.some(x=>x.device===disk.device&&x.mountpoint===disk.mountpoint);
-        check.onchange=()=>{selectedHdds=selectedHdds.filter(x=>!(x.device===disk.device&&x.mountpoint===disk.mountpoint));if(check.checked)selectedHdds.push({device:disk.device,mountpoint:disk.mountpoint})};
+        check.onchange=()=>{selectedHdds=selectedHdds.filter(x=>!(x.device===disk.device&&x.mountpoint===disk.mountpoint));if(check.checked)selectedHdds.push({device:disk.device,mountpoint:disk.mountpoint});updateSelection()};
         line.append(check,document.createTextNode(' '+(disk.model||disk.device)+' · '+(disk.size?Math.round(disk.size/1e9)+' GB · ':'')+disk.mountpoint));list.append(line);
       }
       if(!discoveredHdds.length)list.textContent='Подходящие HDD не обнаружены';
-      details.append(list);
+      details.append(count,list);toggle.addEventListener('change',updateSelection);toggleArea.append(toggleLabel,warning);details.append(toggleArea);updateSelection();
       const btn=document.createElement('button');btn.type='button';btn.textContent='Принудительно запустить HDD и смонтировать';
       btn.onclick=async()=>{btn.disabled=true;try{await request('hdd/start',{});el('message').textContent='HDD запущен и смонтирован';await refresh()}catch(e){el('message').textContent='Ошибка запуска HDD: '+e.message}finally{btn.disabled=false}};
       details.append(btn);
@@ -184,6 +191,6 @@ async function refresh(){el('status').textContent='Загрузка состоя
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
 el('refresh').onclick=()=>busy('refresh',refresh);
-el('save').onclick=()=>busy('save',async()=>{const payload={};for(const [key,,type] of fields){const inp=el('cfg-'+key);if(!inp){el('message').textContent='Сначала войдите';return}payload[key]=type==='bool'?inp.checked:(type==='str'||type==='choice')?inp.value:Number(inp.value)}payload.hdd_disks=selectedHdds;try{await request('config',payload);el('message').textContent='Настройки сохранены';await refresh()}catch(e){el('message').textContent=e.message}});
+el('save').onclick=()=>busy('save',async()=>{const payload={};for(const [key,,type] of fields){const inp=el('cfg-'+key);if(!inp){el('message').textContent='Сначала войдите';return}payload[key]=type==='bool'?inp.checked:(type==='str'||type==='choice')?inp.value:Number(inp.value)}payload.hdd_disks=selectedHdds;if(payload.hdd_spindown_enabled&&!selectedHdds.length){el('message').textContent='Выберите хотя бы один HDD для автоматической остановки';selectTab('settings');return}try{await request('config',payload);el('message').textContent='Настройки сохранены';await refresh()}catch(e){el('message').textContent=e.message}});
 
 checkSession();
