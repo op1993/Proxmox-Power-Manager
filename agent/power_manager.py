@@ -14,6 +14,7 @@ import shutil
 CONFIG = Path('/etc/proxmox-power-manager/config.json')
 STATE = Path('/var/lib/proxmox-power-manager/state.json')
 LOCK = Path('/run/proxmox-power-manager.lock')
+HDD_STATE = Path('/var/lib/proxmox-power-manager/hdd-state.json')
 DEFAULTS = dict(enabled=False, sleep_threshold=30, low_threshold=15,
                 critical_threshold=8, normal_wake_minutes=15, low_wake_minutes=60,
                 check_seconds=60, shutdown_timeout=120, force_stop_sleep=False, force_stop_low=False,
@@ -204,37 +205,86 @@ def mount_source(mountpoint):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def hdd_state():
+    """Persist only disks successfully prepared by this manager."""
+    if not HDD_STATE.exists():
+        return {}
+    data = json.loads(HDD_STATE.read_text())
+    if not isinstance(data, dict):
+        raise RuntimeError('Invalid HDD recovery state')
+    return data
+
+
+def disk_identity(device):
+    """Reject a missing or changed physical device, even with a saved marker."""
+    path = Path(device)
+    if not path.exists() or not path.is_symlink():
+        raise RuntimeError('Selected HDD missing: ' + device)
+    real = os.path.realpath(device)
+    if not real.startswith('/dev/') or not Path(real).exists():
+        raise RuntimeError('Selected HDD unavailable: ' + device)
+    return real
+
+
 def hdd_stop(cfg):
-    disks = selected_disks(cfg)
+    # Discovery intentionally requires mounted disks, so it must NOT run again
+    # for a disk we safely unmounted during the previous suspend cycle.
+    prepared = hdd_state()
     if not shutil.which('sg_start'):
         raise RuntimeError('Install sg3-utils on the Proxmox host')
-    for disk in disks:
-        source = mount_source(disk['mountpoint'])
+    for disk in cfg['hdd_disks']:
+        device, mountpoint = disk['device'], disk['mountpoint']
+        identity = disk_identity(device)
+        source = mount_source(mountpoint)
+        previous = prepared.get(device)
+        if previous is not None:
+            if previous != {'device_realpath': identity, 'mountpoint': mountpoint}:
+                raise RuntimeError('HDD identity or mountpoint changed: ' + device)
+            if source:
+                raise RuntimeError('Previously stopped HDD is unexpectedly mounted: ' + mountpoint)
+            log.info('HDD already prepared for sleep: %s', device)
+            continue
+        # Validate newly selected disks against the original safe discovery.
+        selected_disks({**cfg, 'hdd_disks': [disk]})
         if not source:
-            raise RuntimeError('Mountpoint is not mounted: ' + disk['mountpoint'])
-        if os.path.realpath(source) == '/':
-            raise RuntimeError('Refusing system disk')
+            raise RuntimeError('HDD is unmounted without a verified stop record: ' + mountpoint)
         run('sync', timeout=60)
-        run('umount', disk['mountpoint'], timeout=60)
-        if mount_source(disk['mountpoint']):
-            raise RuntimeError('HDD still mounted')
-        run('sg_start', '--readonly', '--stop', disk['device'], timeout=45)
-    return {'ok': True, 'stopped': len(disks)}
+        run('umount', mountpoint, timeout=60)
+        if mount_source(mountpoint):
+            raise RuntimeError('HDD still mounted: ' + mountpoint)
+        run('sg_start', '--readonly', '--stop', device, timeout=45)
+        prepared[device] = {'device_realpath': identity, 'mountpoint': mountpoint}
+        atomic_json(HDD_STATE, prepared)
+        log.info('HDD safely stopped: %s (%s)', device, mountpoint)
+    return {'ok': True, 'stopped': len(cfg['hdd_disks'])}
 
 
 def hdd_start(cfg):
     if not shutil.which('sg_start'):
         raise RuntimeError('Install sg3-utils on the Proxmox host')
-    # Do not rediscover after unmount: use the previously validated configured selection.
+    prepared = hdd_state()
     for disk in cfg['hdd_disks']:
-        if not Path(disk['device']).exists():
-            raise RuntimeError('Selected HDD missing: ' + disk['device'])
-        if mount_source(disk['mountpoint']):
-            continue
-        run('sg_start', '--readonly', '--start', disk['device'], timeout=45)
-        run('mount', disk['mountpoint'], timeout=45)
-        if not mount_source(disk['mountpoint']):
-            raise RuntimeError('Failed to mount: ' + disk['mountpoint'])
+        device, mountpoint = disk['device'], disk['mountpoint']
+        identity = disk_identity(device)
+        previous = prepared.get(device)
+        if previous is not None and previous != {'device_realpath': identity, 'mountpoint': mountpoint}:
+            raise RuntimeError('HDD identity or mountpoint changed: ' + device)
+        if mount_source(mountpoint):
+            # A mounted filesystem is not proof that the configured disk is
+            # the source. Refuse to clear the recovery marker in that case.
+            selected_disks({**cfg, 'hdd_disks': [disk]})
+        else:
+            if previous is None:
+                raise RuntimeError('HDD unmounted without a verified stop record: ' + device)
+            run('sg_start', '--readonly', '--start', device, timeout=45)
+            run('mount', mountpoint, timeout=45)
+            if not mount_source(mountpoint):
+                raise RuntimeError('Failed to mount: ' + mountpoint)
+            selected_disks({**cfg, 'hdd_disks': [disk]})
+        if previous is not None:
+            del prepared[device]
+            atomic_json(HDD_STATE, prepared)
+        log.info('HDD ready and mounted: %s (%s)', device, mountpoint)
     return {'ok': True, 'started': len(cfg['hdd_disks'])}
 
 
@@ -249,6 +299,7 @@ def restore_guests(cfg):
         try: hdd_start(cfg)
         except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as exc:
             log.error('HDD restore failed; guests will not start: %s', exc)
+            __import__('power_events').emit('HDD_ERROR', reason='Восстановление HDD не удалось: ' + str(exc))
             return
     failed=[]
     for ct in saved['containers']:
@@ -323,6 +374,7 @@ def cycle(cfg, dry_run=False):
         try: hdd_stop(cfg)
         except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as exc:
             log.error('HDD stop failed; suspend aborted: %s', exc)
+            __import__('power_events').emit('HDD_ERROR', reason='Подготовка HDD к сну не удалась: ' + str(exc))
             return
     if ac_online(cfg):
         restore_guests(cfg); return
