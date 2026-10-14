@@ -1,15 +1,31 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'agent'))
 spec = importlib.util.spec_from_file_location('ppm',ROOT/'agent/power_manager.py')
 ppm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ppm)
 
 class AgentTests(unittest.TestCase):
+    def test_force_stop_policy_defaults_safe(self):
+        self.assertFalse(ppm.validate({})['force_stop_sleep'])
+        self.assertFalse(ppm.validate({})['force_stop_low'])
+        with self.assertRaises(ValueError): ppm.validate({'force_stop_low':'yes'})
+
+    def test_force_stop_after_graceful_timeout(self):
+        cfg=ppm.validate({})
+        with tempfile.TemporaryDirectory() as d:
+            with patch.object(ppm,'STATE',Path(d)/'state.json'), patch.object(ppm,'running_cts',side_effect=[[101],[]]), \
+                 patch.object(ppm,'running_vms',return_value=[]), patch.object(ppm,'ct_running',side_effect=[True,True,False]), \
+                 patch.object(ppm,'ac_online',return_value=False), patch.object(ppm,'run') as runner:
+                self.assertTrue(ppm.stop_guests(cfg,force=True))
+                self.assertTrue(any(call.args[:2]==('pct','stop') for call in runner.call_args_list))
+
     def test_defaults_disabled(self):
         self.assertFalse(ppm.validate({})['enabled'])
     def test_threshold_order(self):
@@ -23,9 +39,20 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(p.stat().st_mode & 0o777,0o600)
     def test_ac_return_restores(self):
         cfg=ppm.validate({})
-        with patch.object(ppm,'status',return_value={'ac_online':True,'battery_percent':50,'enabled':True,'saved_state':None}), patch.object(ppm,'restore_guests') as restore:
+        with patch.object(ppm,'status',return_value={'ac_online':True,'battery_percent':50,'enabled':True,'saved_state':None,'battery_info':{'status':'Charging'},'charge_control':{'mode':0}}), patch('power_events.observe') as observe, patch.object(ppm,'restore_guests') as restore:
             ppm.cycle(cfg)
             restore.assert_called_once()
+            observe.assert_called_once()
+    def test_rtc_wake_requests_immediate_recheck(self):
+        cfg=ppm.validate({'enabled':True})
+        st={'ac_online':False,'battery_percent':20,'enabled':True,'saved_state':None,
+            'battery_info':{'status':'Discharging'},'charge_control':{'mode':0}}
+        with patch.object(ppm,'status',return_value=st), patch('power_events.observe'), patch('power_events.emit'), \
+             patch.object(ppm,'stop_guests',return_value=True), patch.object(ppm,'ac_online',return_value=False), \
+             patch.object(ppm,'read_int',return_value=20), patch.object(ppm,'run') as runner:
+            self.assertIs(ppm.cycle(cfg), True)
+            runner.assert_called_once_with('rtcwake','-m','mem','-s','900',timeout=1200)
+
     def test_dry_run_never_suspends(self):
         cfg=ppm.validate({'enabled':True})
         with patch.object(ppm,'status',return_value={'ac_online':False,'battery_percent':20,'enabled':True,'saved_state':None}),patch.object(ppm,'stop_guests') as stop:

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $EUID -eq 0 ]] || { echo 'Run ppm as root on Proxmox' >&2; exit 1; }
+CFG=/etc/proxmox-power-manager
+case "${1:-help}" in
+  update)
+    [[ $# -eq 1 ]] || { echo 'Usage: ppm update' >&2; exit 2; }
+    ref=feature/installer-v0.6
+    if [[ -f "$CFG/update-ref" ]]; then
+      ref="$(cat "$CFG/update-ref")"
+    fi
+    [[ "$ref" =~ ^[A-Za-z0-9._/-]+$ && "$ref" != *..* && "$ref" != /* ]] || {
+      echo 'Invalid update ref' >&2; exit 1;
+    }
+    tmp="$(mktemp /tmp/ppm-update.XXXXXXXX)"
+    trap 'rm -f "$tmp"' EXIT
+    curl -fsSL --proto '=https' --tlsv1.2 \
+      "https://raw.githubusercontent.com/op1993/Proxmox-Power-Manager/$ref/update.sh" -o "$tmp"
+    PPM_REF="$ref" bash "$tmp"
+    ;;
+  status)
+    [[ $# -eq 1 ]] || { echo 'Usage: ppm status' >&2; exit 2; }
+    exec python3 /opt/proxmox-power-manager/agent/power_manager.py status
+    ;;
+  version)
+    [[ $# -eq 1 ]] || { echo 'Usage: ppm version' >&2; exit 2; }
+    printf 'Proxmox Power Manager (development)\nUpdate ref: '
+    if [[ -f "$CFG/update-ref" ]]; then cat "$CFG/update-ref"; else echo feature/installer-v0.6; fi
+    ;;
+  help|-h|--help)
+    printf 'Usage: ppm {update|status|version}\n'
+    ;;
+  *)
+    echo "Unknown command: $1" >&2; exit 2
+    ;;
+esac
