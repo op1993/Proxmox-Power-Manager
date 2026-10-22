@@ -48,6 +48,30 @@ function renderAuthSettings(data){
   section.append(button);root.append(section);
 }
 
+function renderTelegramSettings(config){
+ const root=el('telegram-settings');root.replaceChildren();
+ const section=document.createElement('details');section.className='settings-group';section.open=true;
+ const heading=document.createElement('summary');heading.textContent='Telegram уведомления';section.append(heading);
+ const hint=document.createElement('p');hint.className='settings-hint';hint.textContent='Создайте бота через @BotFather и узнайте Chat ID. Сообщения отправляются с хоста Proxmox при наличии интернета.';section.append(hint);
+ const inputs={};
+ for(const [key,label,type] of [['bot_token','Bot Token','password'],['chat_id','Chat ID','text'],['enabled','Включить уведомления','checkbox'],['ac_lost','Потеря питания','checkbox'],['ac_restored','Восстановление питания','checkbox'],['dns','Переключение DNS','checkbox'],['sleep','Сервер уходит в сон','checkbox'],['wake','Сервер проснулся','checkbox']]){
+   const row=document.createElement('label');row.textContent=label;
+   const inp=document.createElement('input');inp.type=type;
+   if(type==='checkbox')inp.checked=config[key]===true;
+   else {inp.value=key==='bot_token'?'':(config[key]||'');inp.placeholder=key==='bot_token'&&config.token_configured?'Токен сохранён':'';inp.style.maxWidth='360px'}
+   row.append(inp);section.append(row);inputs[key]=inp;
+ }
+ const message=document.createElement('p');message.setAttribute('role','status');
+ const save=document.createElement('button');save.type='button';save.textContent='Сохранить Telegram';
+ save.onclick=async()=>{save.disabled=true;try{
+   const payload={};for(const [key,inp] of Object.entries(inputs)){if(key==='bot_token'&&!inp.value)continue;payload[key]=inp.type==='checkbox'?inp.checked:inp.value.trim()}
+   const result=await request('telegram/config',payload);inputs.bot_token.value='';inputs.bot_token.placeholder=result.token_configured?'Токен сохранён':'';message.textContent='Настройки сохранены';
+ }catch(e){message.textContent='Ошибка: '+e.message}finally{save.disabled=false}};
+ const test=document.createElement('button');test.type='button';test.textContent='Отправить тестовое сообщение';
+ test.onclick=async()=>{test.disabled=true;try{await request('telegram/test',{});message.textContent='Тестовое сообщение отправлено'}catch(e){message.textContent='Ошибка отправки: '+e.message}finally{test.disabled=false}};
+ section.append(save,test,message);root.append(section);
+}
+
 function renderRouterSettings(config){
   const root=el('router-settings');root.replaceChildren();
   const section=document.createElement('details');section.className='settings-group';section.open=true;
@@ -293,7 +317,7 @@ for(const [i,name] of tabs.entries()){
 }
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);el('oidc-login').hidden=!s.oidc_enabled;el('username').parentElement.hidden=!s.local_login_enabled;el('password').parentElement.hidden=!s.local_login_enabled;el('login').hidden=!s.local_login_enabled;if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks,auth,router]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]})),request('auth/config'),request('router/config').catch(e=>({error:e.message}))]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);renderAuthSettings(auth);if(router.error)el('router-settings').textContent='Настройки DNS недоступны: '+router.error;else renderRouterSettings(router);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks,auth,router,telegram]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]})),request('auth/config'),request('router/config').catch(e=>({error:e.message})),request('telegram/config').catch(e=>({error:e.message}))]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);renderAuthSettings(auth);if(telegram.error)el('telegram-settings').textContent='Telegram недоступен: '+telegram.error;else renderTelegramSettings(telegram);if(router.error)el('router-settings').textContent='Настройки DNS недоступны: '+router.error;else renderRouterSettings(router);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
 el('oidc-login').onclick=()=>{window.location.assign('/auth/oidc/start')};
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
