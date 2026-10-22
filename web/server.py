@@ -32,7 +32,7 @@ PROOF_LOCK = threading.Lock()
 
 def call(command, payload=None):
     routes = {'status': ('GET', '/v1/status'), 'config': ('GET', '/v1/config'),
-              'update': ('POST', '/v1/config'), 'dry-run': ('POST', '/v1/dry-run'), 'history': ('GET', '/v1/history'), 'router-history': ('GET', '/v1/router/history'), 'hdd-start': ('POST', '/v1/hdd/start'), 'hdd-list': ('GET', '/v1/hdd/disks')}
+              'update': ('POST', '/v1/config'), 'dry-run': ('POST', '/v1/dry-run'), 'history': ('GET', '/v1/history'), 'router-history': ('GET', '/v1/router/history'), 'telegram-config': ('GET', '/v1/telegram/config'), 'telegram-update': ('POST', '/v1/telegram/config'), 'telegram-test': ('POST', '/v1/telegram/test'), 'hdd-start': ('POST', '/v1/hdd/start'), 'hdd-list': ('GET', '/v1/hdd/disks')}
     method, path = routes[command]
     token = pathlib.Path(API_TOKEN_FILE).read_text().strip()
     data = json.dumps(payload if payload is not None else {}).encode() if method == 'POST' else None
@@ -153,6 +153,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, call('hdd-list'))
             if self.path == '/api/config':
                 return self.send_json(200, call('config'))
+            if self.path == '/api/telegram/config':
+                return self.send_json(200, call('telegram-config'))
             if self.path == '/api/router/history':
                 return self.send_json(200, call('router-history'))
             if self.path == '/api/router/config':
@@ -224,6 +226,12 @@ class Handler(BaseHTTPRequestHandler):
                 cookie += '; Secure'
             return self.send_json(200, {'ok': True}, cookie)
         try:
+            if self.path == '/api/telegram/config':
+                return self.send_json(200, call('telegram-update',payload))
+            if self.path == '/api/telegram/test':
+                if payload: raise ValueError('Test does not accept parameters')
+                result=call('telegram-test',{})
+                return self.send_json(200 if result.get('ok') else 502,result)
             if self.path == '/api/router/config':
                 return self.send_json(200, router_settings.set_settings(payload))
             if self.path == '/api/router/test':
