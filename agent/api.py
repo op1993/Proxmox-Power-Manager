@@ -32,7 +32,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             return self.respond(401, {'error': 'Unauthorized'})
         routes = {('GET', '/v1/status'): 'status', ('GET', '/v1/config'): 'config',
-                  ('GET', '/v1/history'): 'history', ('GET', '/v1/router/history'): 'router-history', ('GET', '/v1/hdd/disks'): 'hdd-list', ('POST', '/v1/config'): 'update', ('POST', '/v1/dry-run'): 'dry-run', ('POST', '/v1/hdd/start'): 'hdd-start'}
+                  ('GET', '/v1/history'): 'history', ('GET', '/v1/router/history'): 'router-history', ('GET', '/v1/telegram/config'): 'telegram-config', ('POST', '/v1/telegram/config'): 'telegram-update', ('POST', '/v1/telegram/test'): 'telegram-test', ('GET', '/v1/hdd/disks'): 'hdd-list', ('POST', '/v1/config'): 'update', ('POST', '/v1/dry-run'): 'dry-run', ('POST', '/v1/hdd/start'): 'hdd-start'}
         action = routes.get((method, self.path))
         if not action:
             return self.respond(404, {'error': 'Not found'})
