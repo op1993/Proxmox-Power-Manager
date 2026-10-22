@@ -91,7 +91,7 @@ if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; t
   systemctl is-active --quiet proxmox-power-manager-api.service
 fi
 if [[ -n "$ctid" ]]; then
-  for f in server.py auth.py oidc.py oidc_discovery.py index.html app.js; do
+  for f in server.py auth.py oidc.py oidc_discovery.py router_settings.py index.html app.js; do
     pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"
   done
   for f in package.json router_dns.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
