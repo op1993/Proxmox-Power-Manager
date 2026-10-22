@@ -14,7 +14,7 @@ CFG=/etc/proxmox-power-manager
 [[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
 command -v pct >/dev/null || { echo 'Proxmox pct command required' >&2; exit 1; }
 log_step "Checking Python syntax and running tests"
-python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history,router_dns_sync,router_dns_history}.py "$ROOT"/web/{server,auth,oidc,oidc_discovery}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
+python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history,router_dns_sync,router_dns_history,telegram_notify}.py "$ROOT"/web/{server,auth,oidc,oidc_discovery}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
 if [[ -d "$ROOT/tests" ]]; then
   python3 -m unittest discover -s "$ROOT/tests" -v
 fi
@@ -80,7 +80,7 @@ rollback() {
 }
 trap rollback ERR
 log_step "Deploying and restarting host agent"
-for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py router_dns_sync.py router_dns_history.py; do
+for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py router_dns_sync.py router_dns_history.py telegram_notify.py; do
   install -m 0755 "$ROOT/agent/$f" "$BASE/agent/$f"
 done
 for unit in proxmox-power-manager.service proxmox-power-manager-api.service proxmox-power-manager-cleanup.service proxmox-power-manager-cleanup.timer; do
