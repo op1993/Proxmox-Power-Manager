@@ -48,6 +48,25 @@ function renderAuthSettings(data){
   section.append(button);root.append(section);
 }
 
+function renderRouterSettings(config){
+  const root=el('router-settings');root.replaceChildren();
+  const section=document.createElement('details');section.className='settings-group';section.open=true;
+  const title=document.createElement('summary');title.textContent='Router DNS Integration';section.append(title);
+  const hint=document.createElement('p');hint.className='settings-hint';
+  hint.textContent='Автоматическое переключение DHCP DNS при изменении питания. По умолчанию выключено. Ручное управление остаётся независимым.';
+  section.append(hint);
+  const row=document.createElement('label');row.textContent='Включить автоматическое переключение DNS';
+  const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.id='router-auto-enabled';checkbox.checked=config.enabled===true;
+  row.append(checkbox);section.append(row);
+  const button=document.createElement('button');button.type='button';button.textContent='Сохранить настройку DNS';
+  const message=document.createElement('p');message.setAttribute('role','status');message.className='settings-hint';
+  button.onclick=async()=>{button.disabled=true;try{
+    const result=await request('router/config',{enabled:checkbox.checked});
+    message.textContent=result.enabled?'Автоматизация включена':'Автоматизация выключена';
+  }catch(e){message.textContent='Ошибка сохранения: '+e.message}finally{button.disabled=false}};
+  section.append(button,message);root.append(section);
+}
+
 let selectedHdds=[];
 function renderSettings(cfg){
   selectedHdds=(cfg.hdd_disks||[]).map(x=>({...x}));
@@ -223,7 +242,7 @@ for(const [i,name] of tabs.entries()){
 }
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);el('oidc-login').hidden=!s.oidc_enabled;el('username').parentElement.hidden=!s.local_login_enabled;el('password').parentElement.hidden=!s.local_login_enabled;el('login').hidden=!s.local_login_enabled;if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks,auth]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]})),request('auth/config')]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);renderAuthSettings(auth);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks,auth,router]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]})),request('auth/config'),request('router/config').catch(e=>({error:e.message}))]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);renderAuthSettings(auth);if(router.error)el('router-settings').textContent='Настройки DNS недоступны: '+router.error;else renderRouterSettings(router);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
 el('oidc-login').onclick=()=>{window.location.assign('/auth/oidc/start')};
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
