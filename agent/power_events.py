@@ -8,6 +8,13 @@ STATE = Path('/var/lib/proxmox-power-manager/observed.json')
 
 def emit(kind, **details):
     LOG.info('PPM_EVENT %s', json.dumps(dict(type=kind, **details), ensure_ascii=False))
+    mapping={'AC_LOST':('ac_lost','🔌 Питание отключено'),'AC_RESTORED':('ac_restored','⚡ Питание восстановлено'),'SLEEP_STARTED':('sleep','💤 Сервер уходит в сон'),'SERVER_WOKE':('wake','🌅 Сервер проснулся')}
+    if kind in mapping:
+        from telegram_notify import send
+        setting,title=mapping[kind]
+        battery=details.get('battery_percent')
+        extra=('\\nЗаряд: '+str(battery)+'%') if battery is not None else ''
+        send(title+extra,setting)
 
 def observe(ac, battery, battery_status, conservation_mode, cfg):
     current = dict(ac=bool(ac), battery_status=battery_status,
