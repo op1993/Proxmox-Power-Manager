@@ -51,6 +51,7 @@ install_host_agent() {
   install -m 0755 "$ROOT/agent/charge_control.py" /opt/proxmox-power-manager/agent/charge_control.py
   install -m 0755 "$ROOT/agent/battery_info.py" /opt/proxmox-power-manager/agent/battery_info.py
   install -m 0755 "$ROOT/agent/power_events.py" /opt/proxmox-power-manager/agent/power_events.py
+  install -m 0755 "$ROOT/agent/router_dns_sync.py" /opt/proxmox-power-manager/agent/router_dns_sync.py
   install -m 0755 "$ROOT/agent/event_history.py" /opt/proxmox-power-manager/agent/event_history.py
   if [[ ! -f /etc/proxmox-power-manager/config.json ]]; then
     install -m 0600 "$ROOT/config/config.example.json" /etc/proxmox-power-manager/config.json
@@ -175,7 +176,7 @@ pct exec "$ctid" -- apt-get update
 pct exec "$ctid" -- apt-get install -y python3 ca-certificates openssl
 pct exec "$ctid" -- mkdir -p /opt/proxmox-power-manager/web /etc/proxmox-power-manager
 for f in server.py auth.py oidc.py oidc_discovery.py router_settings.py index.html app.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
-for f in package.json router_dns.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
+for f in package.json router_dns.js router_worker.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
 pct push "$ctid" "$ROOT/scripts/install_router_dependencies.sh" /tmp/ppm-install-router-deps.sh
 pct exec "$ctid" -- bash /tmp/ppm-install-router-deps.sh
 pct exec "$ctid" -- rm -f /tmp/ppm-install-router-deps.sh
