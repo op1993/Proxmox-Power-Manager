@@ -17,11 +17,18 @@ def sync(ac_online):
         if type(ctid) is not int: return True
         if subprocess.run(['pct','status',str(ctid)],capture_output=True,text=True,timeout=12).stdout.strip()!='status: running':
             LOG.warning('Router DNS Web LXC %s is not running',ctid)
-            return True  # Cannot inspect its enabled flag; never start a guest implicitly.
+            if STATE.exists() and not ac_online:
+                try:
+                    return json.loads(STATE.read_text()).get('mode') == 'backup'
+                except (OSError, ValueError):
+                    return False
+            return True  # Not yet configured or AC has returned; do not start a guest implicitly.
         raw=subprocess.run(['pct','exec',str(ctid),'--','cat','/etc/proxmox-power-manager/router.json'],capture_output=True,text=True,timeout=15)
         if raw.returncode: return True  # Not configured yet.
         config=json.loads(raw.stdout)
-        if config.get('enabled') is not True: return True
+        if config.get('enabled') is not True:
+            STATE.unlink(missing_ok=True)
+            return True
         mode='normal' if ac_online else 'backup'
         if STATE.exists():
             previous=json.loads(STATE.read_text())
