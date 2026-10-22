@@ -350,6 +350,9 @@ def cycle(cfg, dry_run=False):
             observe(st['ac_online'], st['battery_percent'], st['battery_info'].get('status'), st['charge_control'].get('mode'), cfg)
         except (OSError, ValueError) as exc:
             log.warning('Event monitoring unavailable: %s', exc)
+    router_ready = True
+    if not dry_run:
+        router_ready = __import__('router_dns_sync').sync(st['ac_online'])
     log.info('AC=%s battery=%s%% enabled=%s',st['ac_online'],st['battery_percent'],cfg['enabled'])
     if st['ac_online']:
         if not dry_run: restore_guests(cfg)
@@ -359,6 +362,9 @@ def cycle(cfg, dry_run=False):
             log.warning('Recovery state exists while automation is disabled; waiting for AC')
         return
     if st['saved_state'] is None and st['battery_percent'] > cfg['sleep_threshold']: return
+    if not router_ready:
+        log.error('Router DNS backup not confirmed; suspend aborted to preserve network DNS')
+        return
     if st['battery_percent'] <= cfg['critical_threshold']:
         critical(cfg,dry_run); return
     minutes = cfg['low_wake_minutes'] if st['battery_percent'] <= cfg['low_threshold'] else cfg['normal_wake_minutes']
