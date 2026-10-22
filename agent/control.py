@@ -55,6 +55,15 @@ def execute(action, changes=None):
         if changes not in ({}, None): raise ValueError('Unexpected payload')
         import power_manager
         return power_manager.hdd_start(power_manager.load_config())
+    if action == 'telegram-config':
+        from telegram_notify import settings
+        return settings()
+    if action == 'telegram-update':
+        from telegram_notify import save
+        return save(changes)
+    if action == 'telegram-test':
+        from telegram_notify import send
+        return {'ok':send('Proxmox Power Manager: Telegram test',force=True)}
     if action == 'router-history':
         from router_dns_history import read
         return {'events': list(reversed(read()))}
