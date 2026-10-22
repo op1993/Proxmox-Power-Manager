@@ -3,6 +3,12 @@
 set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo 'Run as root on Proxmox' >&2; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+started_at=$SECONDS
+step=0
+log_step() {
+  step=$((step + 1))
+  printf '\n[%s] [Step %02d] %s (elapsed %ss)\n' "$(date '+%H:%M:%S')" "$step" "$*" "$((SECONDS - started_at))"
+}
 BASE=/opt/proxmox-power-manager
 CFG=/etc/proxmox-power-manager
 [[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
