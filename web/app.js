@@ -53,17 +53,40 @@ function renderRouterSettings(config){
   const section=document.createElement('details');section.className='settings-group';section.open=true;
   const title=document.createElement('summary');title.textContent='Router DNS Integration';section.append(title);
   const hint=document.createElement('p');hint.className='settings-hint';
-  hint.textContent='Автоматическое переключение DHCP DNS при изменении питания. По умолчанию выключено. Ручное управление остаётся независимым.';
+  hint.textContent='Настройки DHCP DNS TP-Link. Автоматизация по питанию пока не активирована: включение профиля сохраняет параметры, но не меняет DNS роутера.';
   section.append(hint);
-  const row=document.createElement('label');row.textContent='Включить автоматическое переключение DNS';
-  const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.id='router-auto-enabled';checkbox.checked=config.enabled===true;
-  row.append(checkbox);section.append(row);
-  const button=document.createElement('button');button.type='button';button.textContent='Сохранить настройку DNS';
+  const controls={};
+  function add(label,key,type='text',placeholder=''){
+    const row=document.createElement('label');row.textContent=label;
+    const inp=document.createElement('input');inp.type=type;inp.id='router-'+key;
+    if(type==='checkbox')inp.checked=config[key]===true;
+    else {inp.value=type==='password'?'':(config[key]||'');inp.placeholder=placeholder;inp.style.maxWidth='360px';}
+    row.append(inp);section.append(row);controls[key]=inp;
+  }
+  add('Адрес роутера (HTTPS)','url','url','https://192.168.0.1/');
+  add('Пароль администратора (пусто — оставить прежний)','password','password',config.password_configured?'Пароль уже сохранён':'Введите пароль');
+  add('Обычный DNS: основной (AdGuard)','normal_primary','text','192.168.0.176');
+  add('Обычный DNS: дополнительный (можно пустой)','normal_secondary');
+  add('Резервный DNS: основной','backup_primary','text','94.140.14.59');
+  add('Резервный DNS: дополнительный','backup_secondary','text','94.140.14.50');
+  add('Включить автоматическое переключение DNS','enabled','checkbox');
+  const button=document.createElement('button');button.type='button';button.textContent='Сохранить настройки DNS';
   const message=document.createElement('p');message.setAttribute('role','status');message.className='settings-hint';
-  button.onclick=async()=>{button.disabled=true;try{
-    const result=await request('router/config',{enabled:checkbox.checked});
-    message.textContent=result.enabled?'Автоматизация включена':'Автоматизация выключена';
-  }catch(e){message.textContent='Ошибка сохранения: '+e.message}finally{button.disabled=false}};
+  button.onclick=async()=>{
+    button.disabled=true;
+    try{
+      const payload={};
+      for(const [key,inp] of Object.entries(controls)){
+        if(key==='password'&&!inp.value)continue;
+        payload[key]=inp.type==='checkbox'?inp.checked:inp.value.trim();
+      }
+      const result=await request('router/config',payload);
+      message.textContent='Настройки сохранены. Автоматическое переключение пока не подключено к событиям питания.';
+      controls.password.value='';
+      controls.password.placeholder=result.password_configured?'Пароль уже сохранён':'Введите пароль';
+    }catch(e){message.textContent='Ошибка сохранения: '+e.message}
+    finally{button.disabled=false}
+  };
   section.append(button,message);root.append(section);
 }
 
