@@ -89,7 +89,33 @@ function renderRouterSettings(config){
   };
   const test=document.createElement('button');test.type='button';test.textContent='Проверить подключение (без изменения DNS)';
   test.onclick=async()=>{test.disabled=true;try{const result=await request('router/test',{});message.textContent='Подключение успешно. DNS роутера: '+JSON.stringify(result.dns)}catch(e){message.textContent='Проверка: '+e.message}finally{test.disabled=false}};
-  section.append(button,test,message);root.append(section);
+  section.append(button,test,message);
+  const historyTitle=document.createElement('h3');historyTitle.textContent='История переключений DNS';
+  const history=document.createElement('div');history.className='settings-hint';history.textContent='Загрузка...';
+  const reload=document.createElement('button');reload.type='button';reload.textContent='Обновить историю';
+  async function loadRouterHistory(){
+    reload.disabled=true;
+    try{
+      const data=await request('router/history');
+      history.replaceChildren();
+      if(!data.events?.length){history.textContent='Переключений пока не было';return}
+      const table=document.createElement('table');
+      const head=document.createElement('tr');
+      for(const name of ['Время','Событие','Профиль','Результат','Ошибка']){const th=document.createElement('th');th.textContent=name;head.append(th)}
+      table.append(head);
+      for(const event of data.events){
+        const tr=document.createElement('tr');
+        const cells=[event.timestamp?new Date(event.timestamp).toLocaleString():'—',event.reason||'—',event.mode||'—',event.status==='success'?'Успешно':'Ошибка',event.error||'—'];
+        for(const value of cells){const td=document.createElement('td');td.textContent=value;tr.append(td)}
+        table.append(tr);
+      }
+      history.append(table);
+    }catch(e){history.textContent='Не удалось загрузить историю: '+e.message}
+    finally{reload.disabled=false}
+  }
+  reload.onclick=loadRouterHistory;
+  section.append(historyTitle,reload,history);root.append(section);
+  loadRouterHistory();
 }
 
 let selectedHdds=[];
