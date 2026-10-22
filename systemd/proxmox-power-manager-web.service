@@ -10,6 +10,7 @@ Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
+PrivateTmp=true
 ProtectHome=read-only
 ReadWritePaths=/etc/proxmox-power-manager
 ReadOnlyPaths=/root/.ssh
