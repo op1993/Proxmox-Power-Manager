@@ -80,7 +80,7 @@ rollback() {
 }
 trap rollback ERR
 log_step "Deploying and restarting host agent"
-for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py; do
+for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py router_dns_sync.py; do
   install -m 0755 "$ROOT/agent/$f" "$BASE/agent/$f"
 done
 for unit in proxmox-power-manager.service proxmox-power-manager-api.service proxmox-power-manager-cleanup.service proxmox-power-manager-cleanup.timer; do
@@ -105,7 +105,7 @@ if [[ -n "$ctid" ]]; then
   for f in server.py auth.py oidc.py oidc_discovery.py router_settings.py index.html app.js; do
     pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"
   done
-  for f in package.json router_dns.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
+  for f in package.json router_dns.js router_worker.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
   pct push "$ctid" "$ROOT/scripts/install_router_dependencies.sh" /tmp/ppm-install-router-deps.sh
   log_step "Installing Node.js, Playwright and Chromium in LXC $ctid (may take several minutes)"
   pct exec "$ctid" -- bash /tmp/ppm-install-router-deps.sh
