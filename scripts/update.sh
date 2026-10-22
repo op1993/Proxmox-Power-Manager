@@ -7,10 +7,12 @@ BASE=/opt/proxmox-power-manager
 CFG=/etc/proxmox-power-manager
 [[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
 command -v pct >/dev/null || { echo 'Proxmox pct command required' >&2; exit 1; }
+log_step "Checking Python syntax and running tests"
 python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history}.py "$ROOT"/web/{server,auth,oidc,oidc_discovery}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
 if [[ -d "$ROOT/tests" ]]; then
   python3 -m unittest discover -s "$ROOT/tests" -v
 fi
+log_step "Checking configuration and guest recovery state"
 python3 - <<'PY'
 import json,pathlib
 cfg=json.loads(pathlib.Path('/etc/proxmox-power-manager/config.json').read_text())
@@ -39,6 +41,7 @@ if [[ -n "$ctid" ]]; then
     echo 'Web auth config missing; refusing update' >&2; exit 1;
   }
 fi
+log_step "Creating backups"
 stamp="$(date +%Y%m%d%H%M%S)"
 backup="/var/backups/proxmox-power-manager/$stamp"
 mkdir -p "$backup/agent" "$backup/systemd" "$backup/cleanup"
@@ -70,6 +73,7 @@ rollback() {
   fi
 }
 trap rollback ERR
+log_step "Deploying and restarting host agent"
 for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py; do
   install -m 0755 "$ROOT/agent/$f" "$BASE/agent/$f"
 done
@@ -91,12 +95,15 @@ if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; t
   systemctl is-active --quiet proxmox-power-manager-api.service
 fi
 if [[ -n "$ctid" ]]; then
+  log_step "Copying web files into LXC $ctid"
   for f in server.py auth.py oidc.py oidc_discovery.py router_settings.py index.html app.js; do
     pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"
   done
   for f in package.json router_dns.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
   pct push "$ctid" "$ROOT/scripts/install_router_dependencies.sh" /tmp/ppm-install-router-deps.sh
+  log_step "Installing Node.js, Playwright and Chromium in LXC $ctid (may take several minutes)"
   pct exec "$ctid" -- bash /tmp/ppm-install-router-deps.sh
+  log_step "Restarting and checking web UI"
   pct exec "$ctid" -- rm -f /tmp/ppm-install-router-deps.sh
   pct push "$ctid" "$ROOT/systemd/proxmox-power-manager-web.service" /etc/systemd/system/proxmox-power-manager-web.service
   pct exec "$ctid" -- systemctl daemon-reload
@@ -105,6 +112,7 @@ if [[ -n "$ctid" ]]; then
 fi
 install -m 0755 "$ROOT/scripts/ppm" /usr/local/bin/ppm
 trap - ERR
+log_step "Update finished"
 echo "Update successful. Host backup: $backup"
 if [[ -n "$ctid" ]]; then
   echo "Web LXC $ctid updated. Web backup: $web_backup"
