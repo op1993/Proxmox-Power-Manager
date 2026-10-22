@@ -39,7 +39,7 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(p.stat().st_mode & 0o777,0o600)
     def test_ac_return_restores(self):
         cfg=ppm.validate({})
-        with patch.object(ppm,'status',return_value={'ac_online':True,'battery_percent':50,'enabled':True,'saved_state':None,'battery_info':{'status':'Charging'},'charge_control':{'mode':0}}), patch('power_events.observe') as observe, patch.object(ppm,'restore_guests') as restore:
+        with patch.object(ppm,'status',return_value={'ac_online':True,'battery_percent':50,'enabled':True,'saved_state':None,'battery_info':{'status':'Charging'},'charge_control':{'mode':0}}), patch('power_events.observe') as observe, patch('router_dns_sync.sync',return_value=True), patch.object(ppm,'restore_guests') as restore:
             ppm.cycle(cfg)
             restore.assert_called_once()
             observe.assert_called_once()
@@ -49,7 +49,7 @@ class AgentTests(unittest.TestCase):
             'battery_info':{'status':'Discharging'},'charge_control':{'mode':0}}
         with patch.object(ppm,'status',return_value=st), patch('power_events.observe'), patch('power_events.emit'), \
              patch.object(ppm,'stop_guests',return_value=True), patch.object(ppm,'ac_online',return_value=False), \
-             patch.object(ppm,'read_int',return_value=20), patch.object(ppm,'run') as runner:
+             patch.object(ppm,'read_int',return_value=20), patch('router_dns_sync.sync',return_value=True), patch.object(ppm,'run') as runner:
             self.assertIs(ppm.cycle(cfg), True)
             runner.assert_called_once_with('rtcwake','-m','mem','-s','900',timeout=1200)
 
