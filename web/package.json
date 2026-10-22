@@ -1,0 +1,9 @@
+{
+  "name": "proxmox-power-manager-router",
+  "private": true,
+  "version": "0.1.0",
+  "description": "On-demand router DNS automation",
+  "dependencies": {
+    "playwright": "^1.58.0"
+  }
+}
