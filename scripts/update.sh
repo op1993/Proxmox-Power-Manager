@@ -14,7 +14,7 @@ CFG=/etc/proxmox-power-manager
 [[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
 command -v pct >/dev/null || { echo 'Proxmox pct command required' >&2; exit 1; }
 log_step "Checking Python syntax and running tests"
-python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history}.py "$ROOT"/web/{server,auth,oidc,oidc_discovery}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
+python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history,router_dns_sync}.py "$ROOT"/web/{server,auth,oidc,oidc_discovery}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
 if [[ -d "$ROOT/tests" ]]; then
   python3 -m unittest discover -s "$ROOT/tests" -v
 fi
