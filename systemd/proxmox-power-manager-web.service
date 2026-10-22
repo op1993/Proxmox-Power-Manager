@@ -11,6 +11,7 @@ RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadOnlyPaths=/etc/proxmox-power-manager /root/.ssh
+ReadWritePaths=/etc/proxmox-power-manager
+ReadOnlyPaths=/root/.ssh
 [Install]
 WantedBy=multi-user.target
