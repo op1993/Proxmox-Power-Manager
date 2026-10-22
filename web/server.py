@@ -15,6 +15,7 @@ import ssl
 from urllib.error import HTTPError
 from auth import load_auth, save_auth, sign_session, verify_password, verify_session
 import oidc
+import router_settings
 
 ROOT = pathlib.Path(__file__).resolve().parent
 API_URL = os.environ.get('PPM_API_URL', 'https://127.0.0.1:8765')
@@ -151,6 +152,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(200, call('hdd-list'))
             if self.path == '/api/config':
                 return self.send_json(200, call('config'))
+            if self.path == '/api/router/config':
+                return self.send_json(200, router_settings.get_settings())
             if self.path == '/api/auth/config':
                 cfg=load_auth();settings=cfg.get('oidc',{})
                 return self.send_json(200,{'local_login_enabled':cfg.get('local_login_enabled',True),
@@ -218,6 +221,9 @@ class Handler(BaseHTTPRequestHandler):
                 cookie += '; Secure'
             return self.send_json(200, {'ok': True}, cookie)
         try:
+            if self.path == '/api/router/config':
+                if set(payload) != {'enabled'}: raise ValueError('Only enabled is supported')
+                return self.send_json(200, router_settings.set_enabled(payload['enabled']))
             if self.path == '/api/auth/config':
                 if set(payload)-{'oidc','local_login_enabled'}: raise ValueError('Unsupported auth setting')
                 cfg=load_auth(); current=dict(cfg.get('oidc',{})); supplied=payload.get('oidc',{})
