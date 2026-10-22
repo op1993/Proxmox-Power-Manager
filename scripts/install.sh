@@ -53,6 +53,7 @@ install_host_agent() {
   install -m 0755 "$ROOT/agent/power_events.py" /opt/proxmox-power-manager/agent/power_events.py
   install -m 0755 "$ROOT/agent/router_dns_sync.py" /opt/proxmox-power-manager/agent/router_dns_sync.py
   install -m 0755 "$ROOT/agent/router_dns_history.py" /opt/proxmox-power-manager/agent/router_dns_history.py
+  install -m 0755 "$ROOT/agent/telegram_notify.py" /opt/proxmox-power-manager/agent/telegram_notify.py
   install -m 0755 "$ROOT/agent/event_history.py" /opt/proxmox-power-manager/agent/event_history.py
   if [[ ! -f /etc/proxmox-power-manager/config.json ]]; then
     install -m 0600 "$ROOT/config/config.example.json" /etc/proxmox-power-manager/config.json
