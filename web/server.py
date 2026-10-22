@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import secrets
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -223,6 +224,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == '/api/router/config':
                 return self.send_json(200, router_settings.set_settings(payload))
+            if self.path == '/api/router/test':
+                if payload: raise ValueError('Test does not accept parameters')
+                proc = subprocess.run(['/usr/bin/node', str(ROOT / 'router_worker.js'), 'test'], capture_output=True, text=True, timeout=75, cwd=ROOT)
+                if proc.returncode:
+                    return self.send_json(502, {'error': (proc.stderr or 'Router connection failed')[-500:]})
+                return self.send_json(200, json.loads(proc.stdout))
             if self.path == '/api/auth/config':
                 if set(payload)-{'oidc','local_login_enabled'}: raise ValueError('Unsupported auth setting')
                 cfg=load_auth(); current=dict(cfg.get('oidc',{})); supplied=payload.get('oidc',{})
