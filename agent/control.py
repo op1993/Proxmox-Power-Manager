@@ -70,6 +70,11 @@ def execute(action, changes=None):
     if action == 'history':
         from event_history import today
         return today()
+    if action == 'history-date':
+        from event_history import for_date
+        if not isinstance(changes, dict) or set(changes) != {'date'}:
+            raise ValueError('Expected date')
+        return for_date(changes['date'])
     if action == 'config':
         return read_config()
     if action == 'update':
