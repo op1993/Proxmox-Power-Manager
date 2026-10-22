@@ -53,7 +53,7 @@ function renderRouterSettings(config){
   const section=document.createElement('details');section.className='settings-group';section.open=true;
   const title=document.createElement('summary');title.textContent='Router DNS Integration';section.append(title);
   const hint=document.createElement('p');hint.className='settings-hint';
-  hint.textContent='Настройки DHCP DNS TP-Link. Автоматизация по питанию пока не активирована: включение профиля сохраняет параметры, но не меняет DNS роутера.';
+  hint.textContent='Настройки DHCP DNS TP-Link. При потере питания применяется резервный DNS, при восстановлении — обычный. Перед включением проверьте соединение.';
   section.append(hint);
   const controls={};
   function add(label,key,type='text',placeholder=''){
@@ -81,13 +81,15 @@ function renderRouterSettings(config){
         payload[key]=inp.type==='checkbox'?inp.checked:inp.value.trim();
       }
       const result=await request('router/config',payload);
-      message.textContent='Настройки сохранены. Автоматическое переключение пока не подключено к событиям питания.';
+      message.textContent='Настройки сохранены. Проверьте подключение перед включением автоматизации.';
       controls.password.value='';
       controls.password.placeholder=result.password_configured?'Пароль уже сохранён':'Введите пароль';
     }catch(e){message.textContent='Ошибка сохранения: '+e.message}
     finally{button.disabled=false}
   };
-  section.append(button,message);root.append(section);
+  const test=document.createElement('button');test.type='button';test.textContent='Проверить подключение (без изменения DNS)';
+  test.onclick=async()=>{test.disabled=true;try{const result=await request('router/test',{});message.textContent='Подключение успешно. DNS роутера: '+JSON.stringify(result.dns)}catch(e){message.textContent='Проверка: '+e.message}finally{test.disabled=false}};
+  section.append(button,test,message);root.append(section);
 }
 
 let selectedHdds=[];
