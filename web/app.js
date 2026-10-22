@@ -272,7 +272,7 @@ function renderInfo(status){
 function renderHistory(data){
   const root=el('history');root.replaceChildren();
   const events=(data.events||[]).slice().reverse();
-  if(!events.length){root.textContent='Сегодня событий пока нет';return}
+  if(!events.length){root.textContent='За выбранную дату событий нет';return}
   const titles={AC_LOST:'Электричество отключено',AC_RESTORED:'Электричество восстановлено',
     BATTERY_STATUS:'Изменение состояния зарядки',CONSERVATION_CHANGED:'Режим аккумулятора изменён',
     BATTERY_THRESHOLD:'Достигнут порог заряда',SLEEP_STARTED:'Сервер переходит в сон',
@@ -294,6 +294,27 @@ function renderHistory(data){
     item.append(time,title,reason);root.append(item);
   }
 }
+function localHistoryDate(){
+  const d=new Date();
+  return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+}
+let historyRequestId=0;
+async function loadHistory(){
+  const date=el('history-date').value;
+  if(!date)return;
+  const id=++historyRequestId;
+  el('history').textContent='Загрузка событий...';
+  try{
+    const result=await request('history/date',{date});
+    if(id===historyRequestId)renderHistory(result);
+  }catch(e){
+    if(id===historyRequestId)el('history').textContent='Не удалось загрузить историю: '+e.message;
+  }
+}
+el('history-date').max=localHistoryDate();
+el('history-date').value=localHistoryDate();
+el('history-date').addEventListener('change',loadHistory);
+el('history-today').onclick=()=>{el('history-date').value=localHistoryDate();loadHistory()};
 const tabs=['overview','history','settings'];
 function selectTab(name,focus=false){
   if(!tabs.includes(name))return;
@@ -317,7 +338,7 @@ for(const [i,name] of tabs.entries()){
 }
 function showLogin(show){el('login-panel').hidden=!show;el('dashboard').hidden=show}
 async function checkSession(){try{const s=await request('session');csrf=s.csrf||'';showLogin(!s.authenticated);el('oidc-login').hidden=!s.oidc_enabled;el('username').parentElement.hidden=!s.local_login_enabled;el('password').parentElement.hidden=!s.local_login_enabled;el('login').hidden=!s.local_login_enabled;if(s.authenticated)await refresh()}catch(e){showLogin(true);el('login-error').textContent=e.message}}
-async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks,auth,router,telegram]=await Promise.all([request('status'),request('config'),request('history').catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]})),request('auth/config'),request('router/config').catch(e=>({error:e.message})),request('telegram/config').catch(e=>({error:e.message}))]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);renderAuthSettings(auth);if(telegram.error)el('telegram-settings').textContent='Telegram недоступен: '+telegram.error;else renderTelegramSettings(telegram);if(router.error)el('router-settings').textContent='Настройки DNS недоступны: '+router.error;else renderRouterSettings(router);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
+async function refresh(){el('status').textContent='Загрузка состояния...';try{const [status,cfg,history,disks,auth,router,telegram]=await Promise.all([request('status'),request('config'),request('history/date',{date:el('history-date').value}).catch(e=>({error:e.message})),request('hdd/disks').catch(()=>({disks:[]})),request('auth/config'),request('router/config').catch(e=>({error:e.message})),request('telegram/config').catch(e=>({error:e.message}))]);discoveredHdds=disks.disks||[];renderInfo(status);renderSettings(cfg);renderAuthSettings(auth);if(telegram.error)el('telegram-settings').textContent='Telegram недоступен: '+telegram.error;else renderTelegramSettings(telegram);if(router.error)el('router-settings').textContent='Настройки DNS недоступны: '+router.error;else renderRouterSettings(router);if(history.error)el('history').textContent='Не удалось загрузить историю: '+history.error;else renderHistory(history)}catch(e){el('status').textContent='Не удалось загрузить состояние';el('message').textContent=e.message;if(e.message.includes('Authentication'))showLogin(true)}}
 el('oidc-login').onclick=()=>{window.location.assign('/auth/oidc/start')};
 el('login').onclick=()=>busy('login',async()=>{try{const r=await request('login',{username:el('username').value,password:el('password').value});csrf=r.csrf;el('password').value='';el('login-error').textContent='';showLogin(false);await refresh()}catch(e){el('login-error').textContent=e.message}});
 el('logout').onclick=()=>busy('logout',async()=>{try{await request('logout',{})}finally{csrf='';showLogin(true)}});
