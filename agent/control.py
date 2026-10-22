@@ -55,6 +55,9 @@ def execute(action, changes=None):
         if changes not in ({}, None): raise ValueError('Unexpected payload')
         import power_manager
         return power_manager.hdd_start(power_manager.load_config())
+    if action == 'router-history':
+        from router_dns_history import read
+        return {'events': list(reversed(read()))}
     if action == 'history':
         from event_history import today
         return today()
