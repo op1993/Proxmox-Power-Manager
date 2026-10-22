@@ -222,8 +222,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(200, {'ok': True}, cookie)
         try:
             if self.path == '/api/router/config':
-                if set(payload) != {'enabled'}: raise ValueError('Only enabled is supported')
-                return self.send_json(200, router_settings.set_enabled(payload['enabled']))
+                return self.send_json(200, router_settings.set_settings(payload))
             if self.path == '/api/auth/config':
                 if set(payload)-{'oidc','local_login_enabled'}: raise ValueError('Unsupported auth setting')
                 cfg=load_auth(); current=dict(cfg.get('oidc',{})); supplied=payload.get('oidc',{})
@@ -259,8 +258,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(404, {'error': 'Not found'})
         except ValueError as exc:
             return self.send_json(400,{'error':str(exc)})
+        except OSError as exc:
+            return self.send_json(500, {'error': 'Router configuration write failed: ' + str(exc)})
         except Exception:
-            return self.send_json(502, {'error': 'Agent unavailable'})
+            return self.send_json(502, {'error': 'Operation unavailable'})
 
 if __name__ == '__main__':
     load_auth()
