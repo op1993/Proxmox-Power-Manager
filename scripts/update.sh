@@ -94,6 +94,10 @@ if [[ -n "$ctid" ]]; then
   for f in server.py auth.py oidc.py oidc_discovery.py index.html app.js; do
     pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"
   done
+  for f in package.json router_dns.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
+  pct push "$ctid" "$ROOT/scripts/install_router_dependencies.sh" /tmp/ppm-install-router-deps.sh
+  pct exec "$ctid" -- bash /tmp/ppm-install-router-deps.sh
+  pct exec "$ctid" -- rm -f /tmp/ppm-install-router-deps.sh
   pct push "$ctid" "$ROOT/systemd/proxmox-power-manager-web.service" /etc/systemd/system/proxmox-power-manager-web.service
   pct exec "$ctid" -- systemctl daemon-reload
   pct exec "$ctid" -- systemctl restart proxmox-power-manager-web.service
