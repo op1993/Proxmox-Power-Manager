@@ -19,7 +19,7 @@ async function waitReady(page) {
   await page.locator('.global-trans-mask:visible').waitFor({state:'hidden',timeout:15000});
 }
 
-async function updateDns({url, password, main, secondary = ''}) {
+async function updateDns({url, password, main, secondary = '', verifyOnly = false}) {
   if (net.isIP(main) !== 4 || (secondary && net.isIP(secondary) !== 4)) throw new Error('Invalid DNS IPv4');
   const target = new URL(url);
   if (target.protocol !== 'https:' || target.username || target.password || target.pathname !== '/' || target.search || target.hash) throw new Error('Invalid router URL');
@@ -39,7 +39,7 @@ async function updateDns({url, password, main, secondary = ''}) {
     const primary = page.locator('[data-cy="priDnsInput"] input:visible');
     const secondaryInput = page.locator('[data-cy="sndDnsInput"] input:visible');
     const changed = (await primary.inputValue()) !== main || (await secondaryInput.inputValue()) !== secondary;
-    if (changed) {
+    if (changed && !verifyOnly) {
       await setDnsField(primary,main);
       await setDnsField(secondaryInput,secondary);
       await page.locator('#save-data').click();
@@ -49,8 +49,8 @@ async function updateDns({url, password, main, secondary = ''}) {
     await page.reload({waitUntil:'domcontentloaded'});
     await open();
     const actual = {main:await primary.inputValue(),secondary:await secondaryInput.inputValue()};
-    if (actual.main !== main || actual.secondary !== secondary) throw new Error('DNS verification failed: '+JSON.stringify(actual));
-    return {ok:true,changed,dns:actual};
+    if (!verifyOnly && (actual.main !== main || actual.secondary !== secondary)) throw new Error('DNS verification failed: '+JSON.stringify(actual));
+    return {ok:true,changed:changed && !verifyOnly,dns:actual,connected:true};
   } finally {await browser.close();}
 }
 
