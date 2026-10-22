@@ -55,6 +55,8 @@ def sync(ac_online):
         tmp.replace(STATE)
         LOG.info('Router DNS profile applied: %s',mode)
         log_event(mode, 'success', 'AC restored' if ac_online else 'AC lost', previous_mode, mode)
+        from telegram_notify import send
+        send(('DNS restored: normal' if ac_online else 'DNS switched: backup'),'dns')
         return True
     except (OSError,ValueError,subprocess.SubprocessError) as exc:
         LOG.error('Router DNS synchronization failed: %s',exc)
