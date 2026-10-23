@@ -276,7 +276,8 @@ function renderHistory(data){
   const titles={AC_LOST:'Электричество отключено',AC_RESTORED:'Электричество восстановлено',
     BATTERY_STATUS:'Изменение состояния зарядки',CONSERVATION_CHANGED:'Режим аккумулятора изменён',
     BATTERY_THRESHOLD:'Достигнут порог заряда',SLEEP_STARTED:'Сервер переходит в сон',
-    SERVER_WOKE:'Сервер проснулся',GUESTS_RESTORED:'Контейнеры восстановлены'};
+    SERVER_WOKE:'Сервер проснулся',GUESTS_RESTORED:'Контейнеры восстановлены',
+    ROUTER_DNS_APPLIED:'DNS роутера переключён',ROUTER_DNS_FAILED:'Ошибка переключения DNS'};
   const statuses={Charging:'Заряжается',Discharging:'Разряжается',Full:'Полный заряд','Not charging':'Не заряжается'};
   for(const event of events){
     const item=document.createElement('div');item.className='history-item';
@@ -290,6 +291,8 @@ function renderHistory(data){
     if(event.battery_percent!=null)parts.push('Заряд: '+event.battery_percent+'%');
     if(event.duration_minutes!=null)parts.push('Сон: '+event.duration_minutes+' мин');
     if(event.mode!=null)parts.push('Conservation Mode: '+(event.mode===1?'Long Life':'Standard'));
+    if(event.dns_mode)parts.push('Профиль: '+(event.dns_mode==='backup'?'резервный':'основной'));
+    if(event.error)parts.push('Ошибка: '+event.error);
     reason.textContent=parts.join(' · ');
     item.append(time,title,reason);root.append(item);
   }
