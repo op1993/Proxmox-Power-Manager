@@ -316,6 +316,8 @@ def restore_guests(cfg):
         STATE.unlink(missing_ok=True)
         log.info('All recorded guests restored; state cleared')
         __import__('power_events').emit('GUESTS_RESTORED', reason='Электросеть восстановлена')
+        from telegram_notify import send
+        send('✅ Proxmox Power Manager: сервер полностью восстановлен. Все ранее остановленные контейнеры и виртуальные машины запущены.', 'fully_restored')
     else: log.error('Restore incomplete; state retained: %s',failed)
 
 
