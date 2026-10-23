@@ -1,5 +1,6 @@
 """Read power events for a selected local calendar day from systemd journal."""
 import datetime
+from router_dns_history import read as read_router_history
 import json
 import subprocess
 
@@ -36,6 +37,23 @@ def for_date(date_text):
             events.append({'timestamp_ms': int(item['__REALTIME_TIMESTAMP']) // 1000, **event})
         except (ValueError, TypeError, KeyError):
             continue
+    # Merge router events already persisted independently of journald.
+    for entry in read_router_history():
+        try:
+            timestamp = datetime.datetime.fromisoformat(entry['timestamp'])
+            if timestamp.astimezone().date() != day:
+                continue
+            events.append({
+                'timestamp_ms': int(timestamp.timestamp() * 1000),
+                'type': 'ROUTER_DNS_APPLIED' if entry.get('status') == 'success' else 'ROUTER_DNS_FAILED',
+                'dns_mode': entry.get('mode'),
+                'dns_previous': entry.get('previous'),
+                'reason': entry.get('reason'),
+                'error': entry.get('error'),
+            })
+        except (ValueError, TypeError, KeyError, OverflowError):
+            continue
+    events.sort(key=lambda event: event['timestamp_ms'])
     return {'date': date_text, 'events': events[-1000:]}
 
 def today():
