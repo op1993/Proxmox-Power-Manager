@@ -1,31 +1,126 @@
 #!/usr/bin/env bash
-set -euo pipefail
-[[ $EUID -eq 0 ]] || { echo 'Run as root'; exit 1; }
+# Update an installed Proxmox Power Manager, including its managed web LXC.
+set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || { echo 'Run as root on Proxmox' >&2; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-[[ -f /opt/proxmox-power-manager/agent/power_manager.py ]] || { echo 'Agent not installed'; exit 1; }
-python3 -m py_compile "$ROOT/agent/power_manager.py" "$ROOT/agent/control.py" "$ROOT/agent/api.py" "$ROOT/web/server.py"
-python3 -m unittest discover -s "$ROOT/tests" -v
-if [[ -f /var/lib/proxmox-power-manager/state.json ]]; then
-  echo 'Pending guest recovery state: refusing update until recovered'; exit 1
+started_at=$SECONDS
+step=0
+log_step() {
+  step=$((step + 1))
+  printf '\n[%s] [Step %02d] %s (elapsed %ss)\n' "$(date '+%H:%M:%S')" "$step" "$*" "$((SECONDS - started_at))"
+}
+BASE=/opt/proxmox-power-manager
+CFG=/etc/proxmox-power-manager
+[[ -f "$BASE/agent/power_manager.py" ]] || { echo 'Host agent not installed' >&2; exit 1; }
+command -v pct >/dev/null || { echo 'Proxmox pct command required' >&2; exit 1; }
+log_step "Checking Python syntax and running tests"
+python3 -m py_compile "$ROOT"/agent/{power_manager,control,api,charge_control,battery_info,power_events,event_history,router_dns_sync,router_dns_history,telegram_notify}.py "$ROOT"/web/{server,auth,oidc,oidc_discovery}.py "$ROOT"/scripts/{cleanup_watch,cleanup_plan}.py
+if [[ -d "$ROOT/tests" ]]; then
+  python3 -m unittest discover -s "$ROOT/tests" -v
 fi
-if [[ -f /etc/proxmox-power-manager/config.json ]] && python3 -c 'import json; exit(json.load(open("/etc/proxmox-power-manager/config.json")).get("enabled",False))'; then
-  :
-else
-  echo 'Disable automatic sleep in config before updating'; exit 1
+log_step "Checking configuration and guest recovery state"
+python3 - <<'PY'
+import json,pathlib
+cfg=json.loads(pathlib.Path('/etc/proxmox-power-manager/config.json').read_text())
+if pathlib.Path('/var/lib/proxmox-power-manager/state.json').exists():
+    raise SystemExit('Pending guest recovery: refusing update')
+PY
+ctid=""
+if [[ -f "$CFG/installation.json" ]]; then
+  ctid="$(python3 - <<'PY'
+import json
+d=json.load(open('/etc/proxmox-power-manager/installation.json'))
+v=d.get('web_ctid')
+if type(v) is not int or not 100 <= v <= 999999:
+    raise SystemExit('Invalid web CTID in installation manifest')
+print(v)
+PY
+)"
 fi
+if [[ -z "$ctid" && -f "$CFG/web.env" ]]; then
+  echo 'Web configuration exists but managed CTID is unknown; refusing partial update.' >&2
+  exit 1
+fi
+if [[ -n "$ctid" ]]; then
+  pct status "$ctid" | grep -q 'running' || { echo "Web CT $ctid must be running" >&2; exit 1; }
+  pct exec "$ctid" -- test -f /etc/proxmox-power-manager/auth.json || {
+    echo 'Web auth config missing; refusing update' >&2; exit 1;
+  }
+fi
+log_step "Creating backups"
 stamp="$(date +%Y%m%d%H%M%S)"
-mkdir -p "/var/backups/proxmox-power-manager/$stamp"
-cp -a /opt/proxmox-power-manager/agent "/var/backups/proxmox-power-manager/$stamp/"
-cp -a /etc/proxmox-power-manager/config.json "/var/backups/proxmox-power-manager/$stamp/"
-install -m 0755 "$ROOT/agent/power_manager.py" /opt/proxmox-power-manager/agent/power_manager.py
-install -m 0755 "$ROOT/agent/control.py" /opt/proxmox-power-manager/agent/control.py
-install -m 0755 "$ROOT/agent/api.py" /opt/proxmox-power-manager/agent/api.py
-if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; then
-  install -m 0644 "$ROOT/systemd/proxmox-power-manager-api.service" /etc/systemd/system/
-  systemctl daemon-reload
-  systemctl restart proxmox-power-manager-api.service
+backup="/var/backups/proxmox-power-manager/$stamp"
+mkdir -p "$backup/agent" "$backup/systemd" "$backup/cleanup"
+if [[ -d "$BASE/cleanup" ]]; then cp -a "$BASE/cleanup/." "$backup/cleanup/"; fi
+cp -a "$BASE/agent/." "$backup/agent/"
+for unit in proxmox-power-manager.service proxmox-power-manager-api.service; do
+  [[ ! -f "/etc/systemd/system/$unit" ]] || cp -a "/etc/systemd/system/$unit" "$backup/systemd/"
+done
+web_backup="/opt/proxmox-power-manager/web-backup-$stamp"
+if [[ -n "$ctid" ]]; then
+  pct exec "$ctid" -- cp -a /opt/proxmox-power-manager/web "$web_backup"
+  pct exec "$ctid" -- cp -a /etc/systemd/system/proxmox-power-manager-web.service "$web_backup.service"
 fi
+rollback() {
+  echo 'Update failed; rolling back application files' >&2
+  cp -a "$backup/agent/." "$BASE/agent/"
+  if [[ -d "$BASE/cleanup" ]]; then cp -a "$backup/cleanup/." "$BASE/cleanup/"; fi
+  cp -a "$backup/systemd/." /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl restart proxmox-power-manager.service || true
+  if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; then
+    systemctl restart proxmox-power-manager-api.service || true
+  fi
+  if [[ -n "$ctid" ]]; then
+    pct exec "$ctid" -- cp -a "$web_backup/." /opt/proxmox-power-manager/web/ || true
+    pct exec "$ctid" -- cp -a "$web_backup.service" /etc/systemd/system/proxmox-power-manager-web.service || true
+    pct exec "$ctid" -- systemctl daemon-reload || true
+    pct exec "$ctid" -- systemctl restart proxmox-power-manager-web.service || true
+  fi
+}
+trap rollback ERR
+log_step "Deploying and restarting host agent"
+for f in power_manager.py control.py api.py simulator.py charge_control.py battery_info.py power_events.py event_history.py router_dns_sync.py router_dns_history.py telegram_notify.py; do
+  install -m 0755 "$ROOT/agent/$f" "$BASE/agent/$f"
+done
+for unit in proxmox-power-manager.service proxmox-power-manager-api.service proxmox-power-manager-cleanup.service proxmox-power-manager-cleanup.timer; do
+  if [[ -f "/etc/systemd/system/$unit" ]]; then
+    install -m 0644 "$ROOT/systemd/$unit" "/etc/systemd/system/$unit"
+  fi
+done
+if [[ -f "$CFG/installation.json" ]]; then
+  install -d -m 0755 "$BASE/cleanup"
+  install -m 0755 "$ROOT/scripts/cleanup_watch.py" "$BASE/cleanup/cleanup_watch.py"
+  install -m 0755 "$ROOT/scripts/cleanup_plan.py" "$BASE/cleanup/cleanup_plan.py"
+fi
+systemctl daemon-reload
 systemctl restart proxmox-power-manager.service
-systemctl is-active --quiet proxmox-power-manager.service || { echo 'Agent unhealthy: restore backup manually from /var/backups/proxmox-power-manager/'"$stamp"; exit 1; }
-echo "Host agent updated. Backup: /var/backups/proxmox-power-manager/$stamp"
-echo 'Web UI update requires copying web files to its LXC and restarting the web service.'
+systemctl is-active --quiet proxmox-power-manager.service
+if systemctl is-enabled --quiet proxmox-power-manager-api.service 2>/dev/null; then
+  systemctl restart proxmox-power-manager-api.service
+  systemctl is-active --quiet proxmox-power-manager-api.service
+fi
+if [[ -n "$ctid" ]]; then
+  log_step "Copying web files into LXC $ctid"
+  for f in server.py auth.py oidc.py oidc_discovery.py router_settings.py index.html app.js; do
+    pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"
+  done
+  for f in package.json router_dns.js router_worker.js; do pct push "$ctid" "$ROOT/web/$f" "/opt/proxmox-power-manager/web/$f"; done
+  pct push "$ctid" "$ROOT/scripts/install_router_dependencies.sh" /tmp/ppm-install-router-deps.sh
+  log_step "Installing Node.js, Playwright and Chromium in LXC $ctid (may take several minutes)"
+  pct exec "$ctid" -- bash /tmp/ppm-install-router-deps.sh
+  log_step "Restarting and checking web UI"
+  pct exec "$ctid" -- rm -f /tmp/ppm-install-router-deps.sh
+  pct push "$ctid" "$ROOT/systemd/proxmox-power-manager-web.service" /etc/systemd/system/proxmox-power-manager-web.service
+  pct exec "$ctid" -- systemctl daemon-reload
+  pct exec "$ctid" -- systemctl restart proxmox-power-manager-web.service
+  pct exec "$ctid" -- systemctl is-active --quiet proxmox-power-manager-web.service
+fi
+install -m 0755 "$ROOT/scripts/ppm" /usr/local/bin/ppm
+trap - ERR
+log_step "Update finished"
+echo "Update successful. Host backup: $backup"
+if [[ -n "$ctid" ]]; then
+  echo "Web LXC $ctid updated. Web backup: $web_backup"
+fi
+echo 'Configuration, authentication, API tokens and recovery state were not modified.'

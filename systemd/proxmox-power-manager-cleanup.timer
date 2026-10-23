@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Proxmox Power Manager LXC lifecycle
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=1min
+AccuracySec=15s
+Unit=proxmox-power-manager-cleanup.service
+
+[Install]
+WantedBy=timers.target
