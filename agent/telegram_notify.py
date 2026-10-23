@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 LOG = logging.getLogger('ppm.telegram')
 CONFIG = Path('/etc/proxmox-power-manager/telegram.json')
 DEFAULT = {'enabled': False, 'ac_lost': True, 'ac_restored': True,
-           'dns': True, 'sleep': True, 'wake': True}
+           'dns': True, 'sleep': True, 'wake': True, 'fully_restored': True}
 
 def _read():
     try:
