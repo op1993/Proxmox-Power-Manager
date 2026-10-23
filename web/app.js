@@ -54,7 +54,7 @@ function renderTelegramSettings(config){
  const heading=document.createElement('summary');heading.textContent='Telegram уведомления';section.append(heading);
  const hint=document.createElement('p');hint.className='settings-hint';hint.textContent='Создайте бота через @BotFather и узнайте Chat ID. Сообщения отправляются с хоста Proxmox при наличии интернета.';section.append(hint);
  const inputs={};
- for(const [key,label,type] of [['bot_token','Bot Token','password'],['chat_id','Chat ID','text'],['enabled','Включить уведомления','checkbox'],['ac_lost','Потеря питания','checkbox'],['ac_restored','Восстановление питания','checkbox'],['dns','Переключение DNS','checkbox'],['sleep','Сервер уходит в сон','checkbox'],['wake','Сервер проснулся','checkbox']]){
+ for(const [key,label,type] of [['bot_token','Bot Token','password'],['chat_id','Chat ID','text'],['enabled','Включить уведомления','checkbox'],['ac_lost','Потеря питания','checkbox'],['ac_restored','Восстановление питания','checkbox'],['dns','Переключение DNS','checkbox'],['sleep','Сервер уходит в сон','checkbox'],['wake','Сервер проснулся','checkbox'],['fully_restored','Сервер полностью восстановлен','checkbox']]){
    const row=document.createElement('label');row.textContent=label;
    const inp=document.createElement('input');inp.type=type;
    if(type==='checkbox')inp.checked=config[key]===true;
